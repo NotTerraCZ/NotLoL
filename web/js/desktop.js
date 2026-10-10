@@ -9,14 +9,17 @@
  *   {type:'game', champion, position, gameMode}
  *   {type:'result', id, ok, message}
  *   {type:'appStatus', autostart, backup}
+ *   {type:'update', state, current, version, progress, checkedAt, error} – aktualizace (viz AppUpdater.cs)
  *   {type:'navigate', hash}               – např. "Nastavení" z ikony v oznamovací oblasti
- * Odsud jdou zpět: ready, settings (overlay, jazyk, texty pro tray a overlay), import a overlayBuild.
+ * Odsud jdou zpět: ready, settings (overlay, jazyk, texty pro tray a overlay), import, overlayBuild,
+ * checkUpdate a applyUpdate (restart do stažené verze).
  * V obyčejném prohlížeči se nic z toho nezobrazí.
  */
 const Desktop = (() => {
   const host = window.chrome?.webview;
   const client = { connected: false, phase: 'None' };
   let appStatus = null;
+  let update = null;
   const pending = new Map();
   let reqId = 0;
   let lastOpenKey = null;
@@ -47,6 +50,7 @@ const Desktop = (() => {
     if (!host) return;
     document.body.classList.add('desktop');
     $('#clientChip').hidden = false;
+    $('#updateChip').addEventListener('click', applyUpdate);
     host.addEventListener('message', e => onMessage(e.data));
     paintStatus();
     sendSettings();
@@ -109,10 +113,37 @@ const Desktop = (() => {
         appStatus = m;
         changed();
         break;
+      case 'update':
+        update = m;
+        paintUpdate();
+        changed();
+        break;
       case 'backup':
         runBackup().catch(() => send({ type: 'backupDone', ok: 0, fail: 1 }));
         break;
     }
+  }
+
+  // ---------- Aktualizace ----------
+  // Novou verzi stáhne desktopová appka sama; když je připravená, vpravo nahoře se ukáže tlačítko
+
+  function paintUpdate() {
+    const chip = $('#updateChip');
+    const ready = update?.state === 'ready';
+    chip.hidden = !ready;
+    if (!ready) return;
+    chip.disabled = false;
+    chip.title = t('upd.chipTip', { v: update.version });
+    $('#updateChipText').textContent = t('upd.chip');
+  }
+
+  // NotLoL se zavře, Velopack nainstaluje novou verzi a spustí ji
+  function applyUpdate() {
+    if (update?.state !== 'ready') return;
+    const chip = $('#updateChip');
+    chip.disabled = true;
+    $('#updateChipText').textContent = t('upd.restarting');
+    send({ type: 'applyUpdate' });
   }
 
   // ---------- Ukázky overlaye a herního panelu (z Nastavení) ----------
@@ -751,9 +782,12 @@ const Desktop = (() => {
     toggleOverlayDemo, togglePanelDemo,
     setAutostart: on => send({ type: 'setAutostart', enabled: !!on }),
     backupNow: () => send({ type: 'backupNow' }),
+    checkUpdate: () => send({ type: 'checkUpdate' }),
+    applyUpdate,
     active: !!host,
     get client() { return client; },
     get appStatus() { return appStatus; },
+    get update() { return update; },
     get demo() { return demo; },
   };
 })();

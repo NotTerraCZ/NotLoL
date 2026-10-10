@@ -14,9 +14,10 @@
     <ApplicationHighDpiMode>PerMonitorV2</ApplicationHighDpiMode>
     <Product>NotLoL</Product>
     <Description>League of Legends tier list a buildy z dat u.gg</Description>
-    <Version>1.0.0</Version>
+    <!-- Verze pro lokální build; vydání přes GitHub Actions ji přepíše verzí z tagu (v1.2.3 → 1.2.3) -->
+    <Version>1.1.0</Version>
 
-    <!-- Jeden .exe soubor (potřebuje .NET 10 Desktop Runtime) -->
+    <!-- Jeden .exe soubor (potřebuje .NET 10 Desktop Runtime). Instalátor a aktualizace balí Velopack (vpk). -->
     <RuntimeIdentifier>win-x64</RuntimeIdentifier>
     <SelfContained>false</SelfContained>
     <PublishSingleFile>true</PublishSingleFile>
@@ -35,6 +36,8 @@
 
   <ItemGroup>
     <PackageReference Include="Microsoft.Web.WebView2" Version="1.0.4258.31" />
+    <!-- Instalace a automatické aktualizace z GitHub Releases (stejná verze jako vpk v release.yml) -->
+    <PackageReference Include="Velopack" Version="1.2.161" />
   </ItemGroup>
 
 </Project>

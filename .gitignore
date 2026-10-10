@@ -3,6 +3,10 @@ bin/
 obj/
 dist/
 
+# Installer build (Velopack)
+publish/
+releases/
+
 # Visual Studio / Rider / VS Code
 .vs/
 .idea/

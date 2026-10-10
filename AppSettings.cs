@@ -72,4 +72,17 @@ static class AutoStart
     {
         if (IsEnabled()) Set(true);
     }
+
+    /// <summary>Při odinstalaci: smaže záznam, ale jen když patří téhle (odinstalovávané) kopii appky.</summary>
+    public static void RemoveIfOurs()
+    {
+        try
+        {
+            using var key = Registry.CurrentUser.OpenSubKey(RunKey, writable: true);
+            if (key?.GetValue(Name) is string command && Environment.ProcessPath is { } exe
+                && command.Contains(exe, StringComparison.OrdinalIgnoreCase))
+                key.DeleteValue(Name, false);
+        }
+        catch { /* bez přístupu do registru */ }
+    }
 }

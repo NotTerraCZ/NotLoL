@@ -14,7 +14,7 @@ namespace NotLoL;
 public sealed class MainForm : Form
 {
     static readonly Color Background = Color.FromArgb(10, 13, 22);
-    static readonly string DataDir = Path.Combine(
+    internal static readonly string DataDir = Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "NotLoL");
     static readonly string WindowFile = Path.Combine(DataDir, "window.json");
 
@@ -95,6 +95,13 @@ public sealed class MainForm : Form
     readonly System.Windows.Forms.Timer firstBackup = new() { Interval = 90 * 1000 };
     bool backupRunning;
 
+    // Aktualizace (jen nainstalovaná verze): první kontrola minutu po startu, pak každé 3 hodiny, ve hře ne
+    readonly AppUpdater updater = new();
+    readonly System.Windows.Forms.Timer updateTimer = new() { Interval = 60 * 1000 };
+    readonly ToolStripMenuItem updateItem = new();
+    bool updateBalloonShown;
+    bool balloonIsUpdate;
+
     public MainForm(bool background = false)
     {
         startHidden = background;
@@ -136,6 +143,18 @@ public sealed class MainForm : Form
             RequestBackup(manual: false);
         };
         backupTimer.Tick += (_, _) => RequestBackup(manual: false);
+
+        // Aktualizace: změny stavu přicházejí i z vlákna stahování
+        updater.Changed += () =>
+        {
+            try
+            {
+                if (IsHandleCreated && !IsDisposed) BeginInvoke(OnUpdateChanged);
+            }
+            catch { /* okno se zavírá */ }
+        };
+        updateTimer.Tick += (_, _) => UpdateTick();
+        if (updater.Installed && !updater.Ready) updateTimer.Start();
         ListenForShowRequests();
     }
 
@@ -154,23 +173,31 @@ public sealed class MainForm : Form
         autostartItem.Checked = AutoStart.IsEnabled();
         autostartItem.Click += (_, _) => SetAutostart(!AutoStart.IsEnabled());
         backupItem.Click += (_, _) => RequestBackup();
+        updateItem.Click += (_, _) => OnUpdateItem();
+        updateItem.Visible = updater.Installed;
         exitItem.Click += (_, _) => ExitApp();
         menu.Items.Add(openItem);
         menu.Items.Add(settingsItem);
         menu.Items.Add(new ToolStripSeparator());
         menu.Items.Add(autostartItem);
         menu.Items.Add(backupItem);
+        menu.Items.Add(updateItem);
         menu.Items.Add(new ToolStripSeparator());
         menu.Items.Add(exitItem);
         LabelTray();
 
         tray.Icon = Icon;
-        tray.Text = "NotLoL";
+        tray.Text = $"NotLoL {updater.CurrentVersion}".Trim();
         tray.ContextMenuStrip = menu;
         tray.DoubleClick += (_, _) => ShowFromTray();
         tray.MouseClick += (_, e) =>
         {
             if (e.Button == MouseButtons.Left) ShowFromTray();
+        };
+        // Klik na bublinu o nové verzi = restart do ní
+        tray.BalloonTipClicked += (_, _) =>
+        {
+            if (balloonIsUpdate && updater.Ready) RestartToUpdate();
         };
         tray.Visible = true;
     }
@@ -182,6 +209,14 @@ public sealed class MainForm : Form
         autostartItem.Text = Loc.T("trayAutostart", "Spouštět při startu Windows");
         backupItem.Text = Loc.T("trayBackup", "Zálohovat data teď");
         exitItem.Text = Loc.T("trayExit", "Ukončit NotLoL");
+        updateItem.Text = updater.State switch
+        {
+            "checking" => Loc.T("trayUpdChecking", "Hledám aktualizace…"),
+            "downloading" => Loc.T("trayUpdDownloading", "Stahuji verzi {0}…", updater.NewVersion ?? ""),
+            "ready" => Loc.T("trayUpdReady", "Restartovat a aktualizovat na {0}", updater.NewVersion ?? ""),
+            _ => Loc.T("trayUpdCheck", "Zkontrolovat aktualizace"),
+        };
+        updateItem.Enabled = updater.State is not ("checking" or "downloading");
     }
 
     // Jazyk / barva / texty z rozhraní: uložit, přeložit tray a overlay, poslat hernímu panelu
@@ -287,6 +322,70 @@ public sealed class MainForm : Form
             autostart = AutoStart.IsEnabled(),
             backup = new { last = settings.LastBackup, files, bytes, running = backupRunning },
         });
+    }
+
+    // ---------- Aktualizace ----------
+
+    void UpdateTick()
+    {
+        // Během hry nic nestahovat – zkusí se to za 10 minut
+        if (gameKey != null)
+        {
+            updateTimer.Interval = 10 * 60 * 1000;
+            return;
+        }
+        updateTimer.Interval = 3 * 60 * 60 * 1000;
+        _ = updater.CheckAsync();
+    }
+
+    void OnUpdateChanged()
+    {
+        LabelTray();
+        PostUpdate();
+        // Nevyšlo to (třeba ještě není internet po startu Windows)? Další pokus za 30 minut
+        if (updater.State == "error" && !updater.Ready) updateTimer.Interval = 30 * 60 * 1000;
+        if (!updater.Ready) return;
+        updateTimer.Stop();
+
+        // Okno je schované v oznamovací oblasti: dej o nové verzi vědět bublinou (jednou, ne během hry)
+        if (!Visible && gameKey == null && !updateBalloonShown)
+        {
+            updateBalloonShown = true;
+            balloonIsUpdate = true;
+            tray.ShowBalloonTip(8000, Loc.T("updBalloonTitle", "Je tu NotLoL {0}", updater.NewVersion ?? ""),
+                Loc.T("updBalloonText", "Nová verze se nainstaluje sama při dalším spuštění. Klikni sem, pokud ji chceš hned."),
+                ToolTipIcon.Info);
+        }
+    }
+
+    void PostUpdate() => PostToWeb(new
+    {
+        type = "update",
+        state = updater.State,
+        current = updater.CurrentVersion,
+        version = updater.NewVersion,
+        progress = updater.Progress,
+        checkedAt = updater.CheckedAt,
+        error = updater.Error,
+    });
+
+    // Položka v oznamovací oblasti: restart do stažené verze, jinak kontrola (výsledek ukáže Nastavení)
+    void OnUpdateItem()
+    {
+        if (updater.Ready)
+        {
+            RestartToUpdate();
+            return;
+        }
+        ShowFromTray();
+        PostToWeb(new { type = "navigate", hash = "#/settings" });
+        _ = updater.CheckAsync();
+    }
+
+    // Velopack počká, až se NotLoL zavře, nainstaluje novou verzi a spustí ji (s oknem)
+    void RestartToUpdate()
+    {
+        if (updater.PrepareRestart()) ExitApp();
     }
 
     bool GameInForeground()
@@ -599,6 +698,7 @@ public sealed class MainForm : Form
                 // Stránka se (znovu) načetla – pošli jí aktuální stav
                 PostClientStatus();
                 PostAppStatus();
+                PostUpdate();
                 PostMe();
                 if (champSelect != null) PostChampSelect();
                 if (game != null) PostGame(game);
@@ -615,6 +715,13 @@ public sealed class MainForm : Form
                 break;
             case "backupNow":
                 RequestBackup();
+                break;
+            case "checkUpdate":
+                _ = updater.CheckAsync();
+                break;
+            case "applyUpdate":
+                // Až po návratu z události WebView2 (zavření okna uvnitř ní by ho rušilo)
+                BeginInvoke(RestartToUpdate);
                 break;
             case "backupDone":
                 backupRunning = false;
@@ -1026,6 +1133,7 @@ public sealed class MainForm : Form
             Hide();
             if (!settings.TrayHintShown)
             {
+                balloonIsUpdate = false;
                 tray.ShowBalloonTip(5000, Loc.T("balloonTitle", "NotLoL běží dál na pozadí"),
                     Loc.T("balloonText", "Najdeš ho v oznamovací oblasti vpravo dole. Úplně ho vypneš pravým klikem na ikonu → Ukončit."), ToolTipIcon.Info);
                 settings.TrayHintShown = true;
@@ -1037,6 +1145,7 @@ public sealed class MainForm : Form
         SetHotkeys(false);
         keyHook.Dispose();
         augTimer.Stop();
+        updateTimer.Stop();
         foreach (var l in augLabels) l.Close();
         overlay?.Close();
         panel?.Close();

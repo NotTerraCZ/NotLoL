@@ -232,6 +232,31 @@ input[type="search"]::-webkit-search-cancel-button { filter: invert(.6); cursor:
 .client-chip.busy .dot { background: var(--accent-2); box-shadow: 0 0 0 3px rgba(var(--accent-rgb), .25); animation: blink 1.4s infinite; }
 @keyframes blink { 50% { opacity: .35; } }
 
+/* Připravená aktualizace (desktop) – klik = restart do nové verze */
+.update-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  height: 36px;
+  padding: 0 14px;
+  border-radius: 999px;
+  border: 1px solid transparent;
+  background: linear-gradient(135deg, var(--accent-2), var(--accent));
+  color: #fff;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 700;
+  white-space: nowrap;
+  cursor: pointer;
+  box-shadow: 0 6px 16px -8px rgba(var(--accent-rgb), .9);
+  animation: chip-pulse 1.3s ease-out 3;
+  transition: filter .15s, transform .15s;
+}
+.update-chip[hidden] { display: none; }
+.update-chip:hover { filter: brightness(1.08); }
+.update-chip:active { transform: scale(.98); }
+.update-chip:disabled { opacity: .65; cursor: progress; animation: none; }
+
 /* Můj profil vpravo nahoře */
 .me-chip {
   display: inline-flex;
@@ -1190,14 +1215,17 @@ kbd {
 .backup-info { display: inline-flex; align-items: center; gap: 8px; font-size: 13px; color: var(--muted); }
 .backup-info .ico { color: var(--accent-2); }
 .backup-info.running .ico { animation: spin 1s linear infinite; }
+.backup-info.err .ico { color: var(--wr-low); }
+.set-card .hint a { color: var(--accent-2); text-decoration: underline; text-underline-offset: 2px; }
 .set-card .me-card { margin-bottom: 0; }
 .about p { margin: 0; font-size: 13px; }
 
 /* ---------- Responzivita ---------- */
 
 @media (max-width: 1180px) {
-  #clientText { display: none; }
+  #clientText, #updateChipText { display: none; }
   .client-chip { padding: 0 13px; }
+  .update-chip { padding: 0 11px; }
   .me-text b { max-width: 100px; }
 }
 

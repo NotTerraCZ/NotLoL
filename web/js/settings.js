@@ -77,12 +77,46 @@ const Settings = (() => {
         : t('backup.none');
     return `<h2>${icon('monitor')}${t('st.app')}</h2>
       ${toggle('', t('st.autostart'), !!s?.autostart, t('st.autostartHint'), 'autostart')}
+      ${updateHtml()}
       <h3>${t('st.backup')}</h3>
       <p class="hint">${t('backup.desc')}</p>
       <div class="backup-row">
         <span class="backup-info ${b.running ? 'running' : ''}">${icon(b.running ? 'refresh' : 'database', 16)}${esc(info)}</span>
         <button type="button" class="btn small" id="backupNow" ${b.running ? 'disabled' : ''}>${t('backup.now')}</button>
       </div>`;
+  }
+
+  // Verze a aktualizace: nové verze se stahují samy, nainstalují se po restartu
+  const RELEASES = 'https://github.com/NotTerraCZ/NotLoL/releases/latest';
+
+  function updateHtml() {
+    const u = Desktop.update;
+    if (!u) return '';
+    const head = `<h3>${t('st.updates')}</h3>`;
+    if (u.state === 'off') {
+      const link = `<a href="${RELEASES}" target="_blank" rel="noopener">GitHub</a>`;
+      return `${head}<p class="hint">${t('upd.off', { v: esc(u.current || '?'), link })}</p>`;
+    }
+    const busy = u.state === 'checking' || u.state === 'downloading';
+    const info = {
+      idle: t('upd.idle'),
+      checking: t('upd.checking'),
+      downloading: t('upd.downloading', { v: u.version, p: u.progress || 0 }),
+      ready: t('upd.ready', { v: u.version }),
+      latest: t('upd.latest', { date: fmtDate(u.checkedAt) }),
+      error: t('upd.error'),
+    }[u.state] || '';
+    const ico = busy ? 'refresh' : { ready: 'download', error: 'alert', latest: 'check' }[u.state] || 'info';
+    const btn = u.state === 'ready'
+      ? `<button type="button" class="btn small primary" id="updateApply">${icon('refresh', 15)}${t('upd.restart')}</button>`
+      : `<button type="button" class="btn small" id="updateCheck" ${busy ? 'disabled' : ''}>${t('upd.check')}</button>`;
+    return `${head}
+      <p class="hint">${t('upd.desc', { v: esc(u.current) })}</p>
+      <div class="backup-row">
+        <span class="backup-info ${busy ? 'running' : ''} ${u.state === 'error' ? 'err' : ''}">${icon(ico, 16)}${esc(info)}</span>
+        ${btn}
+      </div>
+      ${u.error ? `<p class="hint">${esc(u.error)}</p>` : ''}`;
   }
 
   function accountCard() {
@@ -146,7 +180,8 @@ const Settings = (() => {
       }
     });
     page.addEventListener('click', async e => {
-      const sw = e.target.closest('[data-accent]');
+      // Jen barevné vzorky – data-accent má i <html> (aktuální barva), takže obecný selektor by chytil každý klik
+      const sw = e.target.closest('.swatch[data-accent]');
       if (sw) {
         state.accent = sw.dataset.accent;
         savePrefs();
@@ -158,7 +193,11 @@ const Settings = (() => {
       const btn = e.target.closest('button');
       if (!btn || btn.disabled) return;
       if (btn.id === 'backupNow') Desktop.backupNow();
-      else if (btn.id === 'overlayDemo' || btn.id === 'panelDemo') {
+      else if (btn.id === 'updateCheck') Desktop.checkUpdate();
+      else if (btn.id === 'updateApply') {
+        btn.disabled = true;
+        Desktop.applyUpdate();
+      } else if (btn.id === 'overlayDemo' || btn.id === 'panelDemo') {
         btn.disabled = true;
         await (btn.id === 'overlayDemo' ? Desktop.toggleOverlayDemo() : Desktop.togglePanelDemo());
         refresh();
