@@ -1,82 +1,138 @@
-# NotLoL
+<p align="center">
+  <img src="docs/images/banner.png" alt="NotLoL – tier lists, builds and live help for League of Legends">
+</p>
 
-A **League of Legends** desktop app for Windows: tier lists, builds, runes and matchups, ARAM, ARAM: Mayhem and Arena – plus integration with the LoL client and the running game.
+<p align="center">
+  <a href="https://github.com/NotTerraCZ/NotLoL/releases/latest/download/NotLoL-Setup.exe"><img src="https://img.shields.io/badge/%E2%AC%87%20Download-NotLoL%20for%20Windows-6c8cff?style=for-the-badge&labelColor=1e2536" alt="Download NotLoL for Windows" height="36"></a>
+</p>
 
-## Download
+<p align="center">
+  <img src="https://img.shields.io/github/v/release/NotTerraCZ/NotLoL?style=flat-square&label=version&color=6c8cff" alt="Latest version">
+  <img src="https://img.shields.io/badge/Windows-10%20%7C%2011-1e2536?style=flat-square" alt="Windows 10 | 11">
+  <img src="https://img.shields.io/badge/price-free-3ee0a0?style=flat-square" alt="Free">
+  <img src="https://img.shields.io/badge/languages-CZ%20%C2%B7%20SK%20%C2%B7%20EN%20%C2%B7%20DE%20%C2%B7%20PL-1e2536?style=flat-square" alt="Czech, Slovak, English, German, Polish">
+</p>
 
-**[Download NotLoL-Setup.exe](https://github.com/NotTerraCZ/NotLoL/releases/latest/download/NotLoL-Setup.exe)** – Windows 10 (1809+) or 11.
+<p align="center">
+  <b>The newest tier lists and builds for every mode, one-click imports into your client<br>and help right inside the game – all in one small Windows app.</b>
+</p>
 
-The installer puts NotLoL in your user account (no administrator rights needed) and adds Start menu and desktop shortcuts. If the .NET 10 Desktop Runtime or the WebView2 Runtime is missing, it downloads and installs it first – Windows asks for permission for that. You can uninstall NotLoL in *Settings → Apps*; that also removes its settings and saved data.
+<p align="center">
+  <a href="#-whats-inside">What's inside</a> ·
+  <a href="#-install">Install</a> ·
+  <a href="#-in-game-shortcuts">Shortcuts</a> ·
+  <a href="#-faq">FAQ</a>
+</p>
 
-The installer isn't code-signed, so Windows SmartScreen may warn you the first time – click **More info → Run anyway**.
+![NotLoL tier list for Ranked Solo/Duo](docs/images/tier-list.png)
 
-## Features
+## ✨ What's inside
 
-- **Tier list** for Ranked Solo/Duo, Flex, Normal Draft, ARAM, ARAM: Mayhem and Arena – always the latest patch, filter by rank and region, table or tier view.
-- **Champion page** – runes, summoner spells, skill order, items and matchups. In Arena: augment order, top 10 prismatic items and best duo partners.
-- **Import into the LoL client** – runes, spells and item set in one click, or automatically after you lock in.
-- **Champ select helper** – in ARAM it shows which bench champion or teammate pick is strongest, in Arena how well you do with your partner.
-- **In-game overlay** with skill order and build; **Ctrl+X** opens a panel with all players (rank, KDA, items) and your build.
-- **On-screen ratings for augments and prismatic items** (Arena, ARAM: Mayhem) – the app reads the offered cards (Windows OCR) and writes the tier and how well each one fits your champion onto it; the best option gets a gold frame.
-- **Players** – search by Riot ID and your own profile in the top right corner (via the LoL client).
-- **Automatic updates** – new versions download in the background and install the next time NotLoL starts, or right away with the **Update** button.
-- Czech, Slovak, English, German and Polish (follows the Windows language), accent colors, starts with Windows in the background, hourly data backup in case a data source goes down.
+### 📊 A tier list for every mode
 
-## In-game shortcuts
+Ranked Solo/Duo, Flex, Normal Draft, ARAM, ARAM: Mayhem and Arena – always for the newest patch. Pick your rank and region, sort by win rate, pick rate or ban rate, see who counters whom, or switch to the classic tier view.
 
-| Shortcut | Action |
+![Tier view for ARAM: Mayhem](docs/images/tiers.png)
+
+### 🧩 Builds, runes and matchups – imported in one click
+
+Every champion comes with runes, summoner spells, skill order, starting items, the core build and the matchups you win and lose. Hit **Import all** and the runes, spells and item set land straight in your LoL client – or let NotLoL do it on its own the moment you lock in.
+
+![Champion page with runes, skill order and the import bar](docs/images/champion.png)
+
+### 🔥 Arena and ARAM: Mayhem
+
+See which augments to take with your champion, ranked from best to worst. In Arena you also get the top 10 prismatic items and the best duo partners.
+
+![Arena champion page with the augment order](docs/images/arena.png)
+
+### 🎯 Help in champ select
+
+NotLoL opens your champion's build as soon as you pick it. In ARAM it shows whether a bench champion or a teammate's pick is stronger than yours, in Arena how well you do with your partner.
+
+![ARAM champ select helper](docs/images/champ-select.png)
+
+### 🎮 In the game
+
+- A small **overlay** tells you which ability to level up next and shows your build, ticking off the items you've already bought.
+- <kbd>Ctrl</kbd> + <kbd>X</kbd> opens a **panel with every player** in the match – rank, KDA, items and how strong their champion is – next to your full build.
+- In **Arena and ARAM: Mayhem**, NotLoL rates the augments and prismatic items you're offered **right on the cards**: the tier, how well each one fits your champion, and a gold frame around the best pick.
+
+![In-game panel (Ctrl+X), shown with preview data](docs/images/ingame-panel.png)
+
+### ⚙️ Stays out of your way
+
+NotLoL starts quietly with Windows and waits in the tray, updates itself, speaks Czech, Slovak, English, German and Polish, and comes in six accent colors. It keeps an hourly backup of all its data, so it keeps working even when a data source goes down. You can also look up any player by Riot ID, and your own profile sits in the top right corner.
+
+![Settings](docs/images/settings.png)
+
+## 📥 Install
+
+1. **[Download NotLoL-Setup.exe](https://github.com/NotTerraCZ/NotLoL/releases/latest/download/NotLoL-Setup.exe)**
+2. Run it. Windows may say *"Windows protected your PC"* because the app isn't signed – click **More info → Run anyway**.
+3. Start League of Legends. NotLoL connects to the client by itself.
+
+That's it – no account and no sign-up. If your PC is missing the .NET 10 Desktop Runtime or WebView2, the installer installs it for you.
+
+**Updates are automatic.** NotLoL downloads new versions in the background and installs them the next time it starts. Want the new version right away? Click **Update** in the top right corner.
+
+> [!TIP]
+> For the overlay and the in-game panel, set the game to **Borderless** window mode (in-game *Settings → Video → Window Mode*).
+
+## ⚡ In-game shortcuts
+
+| Shortcut | What it does |
 | --- | --- |
-| `Ctrl` + `X` | In-game panel – all players, ranks, your build |
-| `Ctrl` + `Shift` + `H` | Hide / show the overlay |
-| `Ctrl` + `Shift` + `M` | Move the overlay with the mouse |
+| <kbd>Ctrl</kbd> + <kbd>X</kbd> | In-game panel – all players, ranks, your build |
+| <kbd>Ctrl</kbd> + <kbd>Shift</kbd> + <kbd>H</kbd> | Hide / show the overlay |
+| <kbd>Ctrl</kbd> + <kbd>Shift</kbd> + <kbd>M</kbd> | Move the overlay with the mouse |
 
-The game must run in **Borderless** window mode so the overlays can be shown on top of it.
+## ❓ FAQ
 
-## Updates
+<details>
+<summary><b>Is it free?</b></summary>
+<br>
+Yes. No ads, no account, nothing to pay.
+</details>
 
-Installing and updating is handled by [Velopack](https://velopack.io). The installed app checks this repository's [GitHub Releases](https://github.com/NotTerraCZ/NotLoL/releases) a minute after it starts and then every 3 hours (never during a game). A new version is downloaded in the background – usually only a small delta – and installed:
+<details>
+<summary><b>Can I get banned for using it?</b></summary>
+<br>
+NotLoL doesn't touch the game's files or memory. It talks to the LoL client and the game only through their official local interfaces – the same ones apps like u.gg or Blitz use – and it reads the augment cards from the screen, just like a screenshot. Still, it's a fan project that isn't endorsed by Riot Games, so use it at your own risk.
+</details>
 
-- the next time NotLoL starts (for example after a Windows restart), or
-- right away with the **Update** button in the top right corner, in *Settings → Application → Updates*, or from the tray icon menu.
+<details>
+<summary><b>Where does the data come from?</b></summary>
+<br>
+Tier lists, builds, runes and matchups come from <a href="https://u.gg">u.gg</a>, Arena data from <a href="https://op.gg">OP.GG</a>, and names and icons from Riot's Data Dragon and CommunityDragon. NotLoL always shows the newest patch, and you can switch to older ones in the top bar.
+</details>
 
-Updates only work in the installed version. A build from `build.cmd` (`dist\NotLoL.exe`) runs without them.
+<details>
+<summary><b>The overlay doesn't show up in the game.</b></summary>
+<br>
+Switch the game to <b>Borderless</b> window mode – Windows doesn't draw other apps over a game in exclusive fullscreen. Also check that the overlay is turned on in NotLoL's settings, and press <kbd>Ctrl</kbd> + <kbd>Shift</kbd> + <kbd>H</kbd> in case you hid it.
+</details>
 
-## Releasing a new version
+<details>
+<summary><b>Why can't I find a player?</b></summary>
+<br>
+Player search goes through your LoL client, so the client has to be running, and it only finds players on the server you're logged in to.
+</details>
 
-Releases are built by GitHub Actions ([`.github/workflows/release.yml`](.github/workflows/release.yml)). Either:
+<details>
+<summary><b>How do I change the language?</b></summary>
+<br>
+NotLoL follows your Windows language. You can pick a different one in <i>Settings → Language</i>.
+</details>
 
-- open **Actions → Release → Run workflow** and enter the version (e.g. `1.2.0`) and optionally what's new, or
-- push a tag: `git tag v1.2.0` and `git push origin v1.2.0`.
+<details>
+<summary><b>How do I uninstall it?</b></summary>
+<br>
+Open Windows <i>Settings → Apps</i>, find NotLoL and click <b>Uninstall</b>. This also removes NotLoL's settings and saved data.
+</details>
 
-The workflow builds the app, packs it with Velopack (installer, portable zip, full and delta update packages) and publishes the GitHub release, including a copy of the installer named `NotLoL-Setup.exe` for the download link above. Every version must be higher than the previous one. A version with a suffix, such as `1.3.0-beta.1`, is published as a pre-release, and installed apps ignore it. The repository has to be public, otherwise installed apps can't download the updates.
+---
 
-If a release run fails halfway, delete the unfinished release (and its tag) on GitHub before running it again.
+<sub>NotLoL isn't endorsed by Riot Games and doesn't reflect the views or opinions of Riot Games or anyone officially involved in producing or managing Riot Games properties. Riot Games, and all associated properties are trademarks or registered trademarks of Riot Games, Inc. NotLoL is not affiliated with u.gg or OP.GG.</sub>
 
-## Building
-
-Requirements: Windows 10 (1809+) or 11, the [.NET 10 SDK](https://dotnet.microsoft.com/download) and the Microsoft Edge WebView2 Runtime (already included in Windows 11).
-
-```bat
-build.cmd
-```
-
-The result is a single file, `dist\NotLoL.exe` (running it only needs the .NET 10 Desktop Runtime).
-
-To build the installer locally (output in `releases\`):
-
-```bat
-dotnet tool install -g vpk --version 1.2.161
-dotnet publish -c Release -o publish
-vpk pack -r win-x64 -u NotLoLApp -v 1.1.0 -p publish -e NotLoL.exe -o releases --packTitle NotLoL -i app.ico --framework net10.0-x64-desktop,webview2
-```
-
-The UI lives in `web/` (HTML, CSS, JavaScript) and is embedded in the `.exe`; the desktop part (WinForms + WebView2) is in the `*.cs` files, updates in `AppUpdater.cs`.
-
-## Data
-
-- [u.gg](https://u.gg) – tier lists, builds, runes, matchups, ARAM and Mayhem (unofficial public JSON files)
-- [OP.GG](https://op.gg) – Arena (placements, augments, prismatic items)
-- Riot Data Dragon and CommunityDragon – names, icons and in-game texts
-- LoL client (LCU API) and the Live Client Data API – champ select, live game, profile and player ranks
-
-NotLoL isn't endorsed by Riot Games and doesn't reflect the views or opinions of Riot Games or anyone officially involved in producing or managing Riot Games properties. Riot Games, and all associated properties are trademarks or registered trademarks of Riot Games, Inc. NotLoL is not affiliated with u.gg or OP.GG.
+<sub>Want to build NotLoL yourself or release a new version? See [DEVELOPMENT.md](DEVELOPMENT.md).</sub>
