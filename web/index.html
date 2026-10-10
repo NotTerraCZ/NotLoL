@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="cs">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>NotLoL</title>
+  <link rel="icon" href="img/logo.png">
+  <meta name="description" content="League of Legends tier list, builds, runes, matchups, ARAM, Mayhem and Arena.">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap">
+  <link rel="stylesheet" href="style.css">
+  <link rel="stylesheet" href="cards.css">
+</head>
+<body>
+  <header class="topbar">
+    <div class="topbar-inner">
+      <a class="brand" href="#/" aria-label="NotLoL">
+        <img class="logo" src="img/logo.png" alt="">
+        <span class="wordmark">Not<span>LoL</span></span>
+      </a>
+      <nav class="nav">
+        <a href="#/" data-nav="tier" data-icon="tier"><span data-i18n="nav.tier"></span></a>
+        <a href="#/players" data-nav="players" data-icon="users"><span data-i18n="nav.players"></span></a>
+        <a href="#/settings" data-nav="settings" data-icon="settings"><span data-i18n="nav.settings"></span></a>
+      </nav>
+      <div class="search">
+        <span class="search-ico" data-icon="search"></span>
+        <input id="globalSearch" class="input" type="search" data-i18n-ph="search.placeholder" data-i18n-aria="search.aria" autocomplete="off" spellcheck="false">
+        <kbd class="search-kbd">/</kbd>
+        <div id="searchResults" class="search-results" hidden></div>
+      </div>
+      <div class="top-right">
+        <label class="patch"><span data-i18n="patch"></span><select id="patchSelect" aria-label="Patch"></select></label>
+        <a id="clientChip" class="client-chip" href="#/settings" hidden><span class="dot"></span><span id="clientText"></span></a>
+        <a id="meChip" class="me-chip" hidden></a>
+      </div>
+    </div>
+  </header>
+
+  <main id="view"></main>
+
+  <footer class="footer"><p id="footerText"></p></footer>
+
+  <script src="js/i18n.js"></script>
+  <script src="js/ui.js"></script>
+  <script src="js/api.js"></script>
+  <script src="js/cards.js"></script>
+  <script src="js/desktop.js"></script>
+  <script src="js/players.js"></script>
+  <script src="js/arena.js"></script>
+  <script src="js/settings.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>
