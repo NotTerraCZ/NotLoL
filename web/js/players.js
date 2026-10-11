@@ -27,6 +27,8 @@ const Players = (() => {
   const isArena = g => ARENA_QUEUES.has(g.queueId) || g.gameMode === 'CHERRY';
 
   const playerHref = (gameName, tagLine) => `#/player/${encodeURIComponent(gameName)}/${encodeURIComponent(tagLine)}`;
+  // Porovnání hráčů: Riot ID v adrese ("#/compare/Jméno%23TAG/…")
+  const compareHref = list => `#/compare/${list.map(p => encodeURIComponent(`${p.gameName}#${p.tagLine}`)).join('/')}`;
   const iconUrl = id => `${PROFILE_ICON}${id || 29}.jpg`;
   const same = (a, b) => String(a || '').toLowerCase() === String(b || '').toLowerCase();
 
@@ -164,6 +166,7 @@ const Players = (() => {
       </div></div>
       ${meCardHtml()}
       <div class="filters">${formHtml()}
+        ${Desktop.active ? `<a class="btn ghost small" href="#/compare">${icon('users', 15)}${t('cmp.open')}</a>` : ''}
         ${Desktop.active ? '' : `<p class="muted">${t('pl.desktopOnly')}</p>`}
       </div>
       ${list.length ? `<h2 class="section-title">${t('pl.recent')}</h2><div class="recent">${list.map(r =>
@@ -172,6 +175,28 @@ const Players = (() => {
     bindForm();
     $('#playerInput')?.focus();
   }
+
+  // Profil z LoL klienta (profil i porovnání). Vlastní profil se uloží a bez klienta se ukáže uložený.
+  async function fetchProfile(gameName, tagLine) {
+    const mine = isMe(gameName, tagLine);
+    const r = await Desktop.lookupPlayer(gameName, tagLine);
+    let data = r.ok ? r.data : null;
+    let cachedAt = null;
+    if (data && mine) {
+      const games = (data.games || []).map(parseGame).filter(Boolean);
+      save(ME_PROFILE_KEY, { ...data, games: undefined, parsedGames: games, savedAt: new Date().toISOString() });
+    } else if (!data && mine) {
+      const cached = load(ME_PROFILE_KEY);
+      if (cached) {
+        data = cached;
+        cachedAt = cached.savedAt;
+      }
+    }
+    return { data, cachedAt, message: r.message, mine };
+  }
+
+  // Zápasy profilu (z klienta nebo z uloženého vlastního profilu), nejnovější první
+  const gamesOf = d => (d.parsedGames || (d.games || []).map(parseGame).filter(Boolean)).sort((a, b) => b.created - a.created);
 
   let req = 0;
   async function renderProfile(gameName, tagLine) {
@@ -186,24 +211,12 @@ const Players = (() => {
     </section>`;
     bindForm();
 
-    const [r, st] = await Promise.all([Desktop.lookupPlayer(gameName, tagLine), API.getStatic(state.patch).catch(() => null)]);
+    const [r, st] = await Promise.all([fetchProfile(gameName, tagLine), API.getStatic(state.patch).catch(() => null)]);
     if (id !== req) return;
     const box = $('#profile');
     if (!box) return;
 
-    let data = r.ok ? r.data : null;
-    let cachedAt = null;
-    if (data && mine) {
-      // Uložit si vlastní profil – ukáže se i bez zapnutého klienta
-      const games = (data.games || []).map(parseGame).filter(Boolean);
-      save(ME_PROFILE_KEY, { ...data, games: undefined, parsedGames: games, savedAt: new Date().toISOString() });
-    } else if (!data && mine) {
-      const cached = load(ME_PROFILE_KEY);
-      if (cached) {
-        data = cached;
-        cachedAt = cached.savedAt;
-      }
-    }
+    const { data, cachedAt } = r;
     if (!data || !st) {
       box.innerHTML = `<div class="state error">${icon('alert', 28)}<p>${esc(r.message || t('pl.fail'))}</p></div>`;
       return;
@@ -212,7 +225,7 @@ const Players = (() => {
     document.title = `${data.gameName}#${data.tagLine} – NotLoL`;
     const P = {
       req: id, d: data, st, mine, puuid: data.puuid,
-      games: (data.parsedGames || (data.games || []).map(parseGame).filter(Boolean)).sort((a, b) => b.created - a.created),
+      games: gamesOf(data),
       next: 20,       // odkud načíst další zápasy
       details: new Map(), // id zápasu -> podrobnosti (všichni hráči) | null = nepodařilo se
       detailError: '',
@@ -313,7 +326,10 @@ const Players = (() => {
           <h1>${esc(d.gameName)} <span class="tag">#${esc(d.tagLine)}</span></h1>
           <p class="sub">${t('pl.level', { n: d.level || 0 })}${q ? ` · ${esc(rankLine(q))}` : ''}</p>
         </div>
-        ${mine ? `<button class="btn ghost small" data-action="refresh-me">${icon('refresh', 15)}${t('me.refresh')}</button>` : ''}
+        <div class="p-actions">
+          <a class="btn ghost small" href="${compareHref([...(me && !mine ? [me] : []), d])}">${icon('users', 15)}${t(me && !mine ? 'cmp.withMe' : 'cmp.compare')}</a>
+          ${mine ? `<button class="btn ghost small" data-action="refresh-me">${icon('refresh', 15)}${t('me.refresh')}</button>` : ''}
+        </div>
       </header>
       <div class="rank-cards">${rankCard('Ranked Solo/Duo', d.solo)}${rankCard('Ranked Flex', d.flex)}</div>
       <div class="profile-stats" id="profileStats">${statsCardsHtml(P)}</div>
@@ -514,12 +530,39 @@ const Players = (() => {
     return [t('pr.partners'), body + loading];
   }
 
-  function averagesCard(P, games) {
-    // Za minutu: bez Areny (jiný typ hry) a jen zápasy s načtenými čísly
+  /**
+   * Základní statistiky ze zápasů (bez remaků): win rate, KDA, průměry za minutu, hlavní role a mód.
+   * Za minutu jen zápasy mimo Arenu s načtenými čísly (null = žádné takové).
+   */
+  function basicStats(all) {
+    const games = all.filter(g => !g.remake);
+    const n = games.length;
+    if (!n) return null;
+    const wins = games.filter(g => g.win).length;
+    const k = games.reduce((s, g) => s + g.k, 0), d = games.reduce((s, g) => s + g.d, 0), a = games.reduce((s, g) => s + g.a, 0);
     const base = games.filter(g => !g.arena && g.duration && g.dmg != null);
     const mins = base.reduce((s, g) => s + g.duration / 60, 0);
-    const per = key => (mins ? base.reduce((s, g) => s + (g[key] || 0), 0) / mins : 0);
-    const k = games.reduce((s, g) => s + g.k, 0), d = games.reduce((s, g) => s + g.d, 0), a = games.reduce((s, g) => s + g.a, 0);
+    const per = key => (mins ? base.reduce((s, g) => s + (g[key] || 0), 0) / mins : null);
+    const rift = games.filter(isRift);
+    const roles = API.ROLES.map(r => ({ role: r, games: rift.filter(g => roleOf(g) === r.key).length })).sort((x, y) => y.games - x.games);
+    const modes = new Map();
+    for (const g of games) modes.set(queueName(g), (modes.get(queueName(g)) || 0) + 1);
+    const mode = [...modes].sort((x, y) => y[1] - x[1])[0];
+    return {
+      n, wins, losses: n - wins, wr: wins / n,
+      k: k / n, d: d / n, a: a / n, kda: kdaOf(k, d, a),
+      dmgMin: per('dmg'), goldMin: per('gold'), csMin: per('cs'), visionMin: per('vision'),
+      avgTime: games.reduce((s, g) => s + g.duration, 0) / n,
+      mainRole: roles[0]?.games ? { ...roles[0], share: roles[0].games / rift.length } : null,
+      mainMode: mode ? { name: mode[0], games: mode[1] } : null,
+      form: games.slice(0, 10),
+    };
+  }
+
+  function averagesCard(P, games) {
+    const b = basicStats(games);
+    const base = games.filter(g => !g.arena && g.duration && g.dmg != null);
+    const mins = b.dmgMin != null;
     const multi = games.reduce((s, g) => (g.multi || [0, 0, 0]).map((x, i) => s[i] + x), [0, 0, 0]);
     // Z podrobností zápasů: podíl na zabitích a na poškození týmu
     let kp = 0, share = 0, n = 0;
@@ -536,14 +579,14 @@ const Players = (() => {
     const tile = (label, value, title = '') => `<div class="ptile"${title ? ` title="${esc(title)}"` : ''}><b>${value}</b><small>${label}</small></div>`;
     const pending = `<span class="muted">${detailsPending(P) ? '…' : '—'}</span>`;
     const tiles = [
-      tile(t('pr.kda'), nf2.format(kdaOf(k, d, a)), `${nf1.format(k / games.length)} / ${nf1.format(d / games.length)} / ${nf1.format(a / games.length)}`),
-      mins ? tile(t('pr.dmgMin'), num(per('dmg'))) : '',
-      mins ? tile(t('pr.goldMin'), num(per('gold'))) : '',
-      mins ? tile(t('pr.csMin'), nf1.format(per('cs'))) : '',
-      mins ? tile(t('pr.visionMin'), nf2.format(per('vision'))) : '',
+      tile(t('pr.kda'), nf2.format(b.kda), `${nf1.format(b.k)} / ${nf1.format(b.d)} / ${nf1.format(b.a)}`),
+      mins ? tile(t('pr.dmgMin'), num(b.dmgMin)) : '',
+      mins ? tile(t('pr.goldMin'), num(b.goldMin)) : '',
+      mins ? tile(t('pr.csMin'), nf1.format(b.csMin)) : '',
+      mins ? tile(t('pr.visionMin'), nf2.format(b.visionMin)) : '',
       base.length ? tile(t('pr.kp'), n ? pct0(kp / n) : pending) : '',
       base.length ? tile(t('pr.dmgShare'), n ? pct0(share / n) : pending) : '',
-      tile(t('pr.avgTime'), mmss(Math.round(games.reduce((s, g) => s + g.duration, 0) / games.length))),
+      tile(t('pr.avgTime'), mmss(Math.round(b.avgTime))),
       tile(t('pr.playtime'), hm(P.games.reduce((s, g) => s + (g.duration || 0), 0))),
       tile(t('pr.multi'), multi.some(Boolean) ? [[multi[0], 'T'], [multi[1], 'Q'], [multi[2], 'P']].filter(([x]) => x).map(([x, l]) => `${x}× ${l}`).join(' · ') : '0',
         `${t('md.multi3')} ${multi[0]} · ${t('md.multi4')} ${multi[1]} · ${t('md.multi5')} ${multi[2]}`),
@@ -807,8 +850,10 @@ const Players = (() => {
   }
 
   return {
-    renderSearchPage, renderProfile, parseRiotId, playerHref, setNav,
+    renderSearchPage, renderProfile, parseRiotId, playerHref, compareHref, setNav,
     setMe, forgetMe, renderMeChip, setOnline, isMe, meCardHtml,
+    // Pro porovnání hráčů (compare.js)
+    fetchProfile, gamesOf, basicStats, topChamps, recent, iconUrl, rankLine, TIER_NAMES, CREST,
     get me() { return me; },
   };
 })();
