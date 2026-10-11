@@ -165,6 +165,7 @@ sealed class LeagueClient : IDisposable
     // ---------- Hráči (rank, historie) ----------
 
     readonly Dictionary<string, string?> puuidCache = new(StringComparer.OrdinalIgnoreCase);
+    string? myPuuid; // přihlášený účet (z GetMeAsync)
 
     async Task<string?> PuuidAsync(string gameName, string tagLine)
     {
@@ -176,36 +177,98 @@ sealed class LeagueClient : IDisposable
         return puuidCache[key];
     }
 
-    static JsonObject? CompactQueue(JsonNode? q)
+    /// <summary>
+    /// Rank v jedné frontě. Prohry ostatních hráčů klient tají (posílá 0) a u výher není jasné, jestli jsou
+    /// za sezónu – u nich jsou proto "wins" i "losses" null a win rate z rankedu jde jen u vlastního účtu.
+    /// </summary>
+    static JsonObject? CompactQueue(JsonNode? q, bool self)
     {
         var tier = q?["tier"]?.GetValue<string>() ?? "";
         if (q == null) return null;
+        int wins = q["wins"]?.GetValue<int>() ?? 0, losses = q["losses"]?.GetValue<int>() ?? 0;
+        bool known = self || losses > 0;
         return new JsonObject
         {
             ["tier"] = tier is "" or "NONE" ? null : tier,
             ["division"] = q["division"]?.GetValue<string>(),
             ["lp"] = q["leaguePoints"]?.GetValue<int>() ?? 0,
-            ["wins"] = q["wins"]?.GetValue<int>() ?? 0,
-            ["losses"] = q["losses"]?.GetValue<int>() ?? 0,
+            ["wins"] = known ? wins : null,
+            ["losses"] = known ? losses : null,
             ["prevTier"] = q["previousSeasonEndTier"]?.GetValue<string>(),
             ["prevDivision"] = q["previousSeasonEndDivision"]?.GetValue<string>(),
         };
     }
 
-    /// <summary>Rank hráče podle Riot ID ("Jméno#TAG") – pro panel ve hře.</summary>
-    public async Task<JsonObject?> GetRankAsync(string riotId)
+    /// <summary>
+    /// Hráč v zápase podle Riot ID ("Jméno#TAG") – pro panel ve hře: ranky a úroveň účtu.
+    /// Každá část se načítá zvlášť: když jedna nepřijde, druhá se ukáže ("ranked": false = ranky chybí).
+    /// </summary>
+    public async Task<JsonObject?> GetPlayerAsync(string riotId)
     {
-        int i = riotId.LastIndexOf('#');
-        if (i <= 0) return null;
-        var puuid = await PuuidAsync(riotId[..i], riotId[(i + 1)..]);
+        var puuid = await PuuidAsync(riotId);
         if (puuid == null) return null;
-        var rs = await GetAsync($"/lol-ranked/v1/ranked-stats/{puuid}");
+        var rankedTask = TryGetAsync($"/lol-ranked/v1/ranked-stats/{puuid}");
+        var summonerTask = TryGetAsync($"/lol-summoner/v2/summoners/puuid/{puuid}");
+        await Task.WhenAll(rankedTask, summonerTask);
+        var (rs, summoner) = (rankedTask.Result, summonerTask.Result);
+        bool self = puuid == myPuuid;
         return new JsonObject
         {
-            ["solo"] = CompactQueue(rs?["queueMap"]?["RANKED_SOLO_5x5"]),
-            ["flex"] = CompactQueue(rs?["queueMap"]?["RANKED_FLEX_SR"]),
+            ["ranked"] = rs != null,
+            ["solo"] = CompactQueue(rs?["queueMap"]?["RANKED_SOLO_5x5"], self),
+            ["flex"] = CompactQueue(rs?["queueMap"]?["RANKED_FLEX_SR"], self),
+            ["level"] = Num(summoner?["summonerLevel"]),
+            ["privacy"] = summoner?["privacy"] is JsonValue pv && pv.TryGetValue<string>(out var privacy) ? privacy : null,
         };
     }
+
+    /// <summary>Posledních 20 zápasů hráče (Riot ID) – pro formu v panelu ve hře. Trvá zhruba sekundu.</summary>
+    public async Task<JsonArray?> GetRecentGamesAsync(string riotId)
+    {
+        var puuid = await PuuidAsync(riotId);
+        if (puuid == null) return null;
+        var history = await GetAsync($"/lol-match-history/v1/products/lol/{puuid}/matches?begIndex=0&endIndex=19");
+        return history == null ? null : CompactGames(history);
+    }
+
+    Task<string?> PuuidAsync(string riotId)
+    {
+        int i = riotId.LastIndexOf('#');
+        return i <= 0 ? Task.FromResult<string?>(null) : PuuidAsync(riotId[..i], riotId[(i + 1)..]);
+    }
+
+    async Task<JsonNode?> TryGetAsync(string path)
+    {
+        try { return await GetAsync(path); }
+        catch { return null; } // klient neodpověděl (včas) – ukáže se zbytek
+    }
+
+    /// <summary>Zápasy z historie v krátké podobě: šampion, výhra, K/D/A, fronta, mód, začátek (ms) a délka (s).</summary>
+    static JsonArray CompactGames(JsonNode history)
+    {
+        var list = new JsonArray();
+        if ((history as JsonObject)?["games"] is not JsonObject box || box["games"] is not JsonArray games) return list;
+        foreach (var g in games.OfType<JsonObject>())
+        {
+            if (g["participants"] is not JsonArray { Count: > 0 } ps || ps[0] is not JsonObject p || p["stats"] is not JsonObject s) continue;
+            list.Add(new JsonObject
+            {
+                ["champ"] = Num(p["championId"]) ?? 0,
+                ["win"] = s["win"] is JsonValue w && w.TryGetValue<bool>(out var won) && won,
+                ["k"] = Num(s["kills"]) ?? 0,
+                ["d"] = Num(s["deaths"]) ?? 0,
+                ["a"] = Num(s["assists"]) ?? 0,
+                ["queue"] = Num(g["queueId"]) ?? 0,
+                ["mode"] = g["gameMode"] is JsonValue m && m.TryGetValue<string>(out var mode) ? mode : "",
+                ["time"] = Num(g["gameCreation"]) ?? 0,
+                ["dur"] = Num(g["gameDuration"]) ?? 0,
+            });
+        }
+        return list;
+    }
+
+    static long? Num(JsonNode? n) =>
+        n is JsonValue v ? (v.TryGetValue<long>(out var l) ? l : v.TryGetValue<double>(out var d) ? (long)d : null) : null;
 
     /// <summary>
     /// Přihlášený účet: Riot ID, ikona, úroveň a ranky (pro profil vpravo nahoře v appce).
@@ -217,6 +280,7 @@ sealed class LeagueClient : IDisposable
         var puuid = s?["puuid"]?.GetValue<string>();
         var gameName = s?["gameName"]?.GetValue<string>();
         if (string.IsNullOrEmpty(puuid) || string.IsNullOrEmpty(gameName)) return null;
+        myPuuid = puuid;
         var ranked = await GetAsync($"/lol-ranked/v1/ranked-stats/{puuid}");
         string? region = null, locale = null;
         try
@@ -235,8 +299,8 @@ sealed class LeagueClient : IDisposable
             ["level"] = (int)(s["summonerLevel"]?.GetValue<long>() ?? 0),
             ["region"] = region,
             ["locale"] = locale,
-            ["solo"] = CompactQueue(ranked?["queueMap"]?["RANKED_SOLO_5x5"]),
-            ["flex"] = CompactQueue(ranked?["queueMap"]?["RANKED_FLEX_SR"]),
+            ["solo"] = CompactQueue(ranked?["queueMap"]?["RANKED_SOLO_5x5"], self: true),
+            ["flex"] = CompactQueue(ranked?["queueMap"]?["RANKED_FLEX_SR"], self: true),
         };
     }
 
@@ -258,8 +322,8 @@ sealed class LeagueClient : IDisposable
             ["level"] = summoner?["summonerLevel"]?.GetValue<int>() ?? 0,
             ["profileIconId"] = summoner?["profileIconId"]?.GetValue<int>() ?? 0,
             ["privacy"] = summoner?["privacy"]?.GetValue<string>(),
-            ["solo"] = CompactQueue(ranked?["queueMap"]?["RANKED_SOLO_5x5"]),
-            ["flex"] = CompactQueue(ranked?["queueMap"]?["RANKED_FLEX_SR"]),
+            ["solo"] = CompactQueue(ranked?["queueMap"]?["RANKED_SOLO_5x5"], puuid == myPuuid),
+            ["flex"] = CompactQueue(ranked?["queueMap"]?["RANKED_FLEX_SR"], puuid == myPuuid),
             ["games"] = history?["games"]?["games"]?.DeepClone() ?? new JsonArray(),
         });
     }
@@ -374,7 +438,7 @@ sealed class LiveGame : IDisposable
     public sealed record Player(
         string RiotId, string Champion, string Team, string Position, bool IsBot, int Level,
         int Kills, int Deaths, int Assists, int Cs, int[] Items, string[] Spells, bool IsDead, double Respawn,
-        string Subteam = "");
+        string Subteam = "", int Keystone = 0, int SubStyle = 0);
 
     public sealed record Snapshot(
         string Champion, string Position, string GameMode, double GameTime,
@@ -432,6 +496,8 @@ sealed class LiveGame : IDisposable
             .Select(k => Str(p["summonerSpells"]?[k]?["rawDisplayName"]).Split('_').FirstOrDefault(s => s.StartsWith("Summoner")) ?? "")
             .ToArray();
         var scores = p["scores"];
+        // Runy hra posílá u všech hráčů (i soupeřů), v Areně ne (null)
+        var runes = p["runes"] as JsonObject;
         var riotId = Str(p["riotId"]) is { Length: > 0 } rid ? rid : Str(p["summonerName"]);
         return new Player(
             riotId, champion, Str(p["team"]), Str(p["position"]), p["isBot"]?.GetValue<bool>() == true,
@@ -439,7 +505,8 @@ sealed class LiveGame : IDisposable
             Int(scores?["kills"]), Int(scores?["deaths"]), Int(scores?["assists"]), Int(scores?["creepScore"]),
             items, spells, p["isDead"]?.GetValue<bool>() == true, p["respawnTimer"]?.GetValue<double>() ?? 0,
             // Arena: dvojice (pokud ji hra posílá) – jinak se hráči seskupí podle týmu
-            Subteam(p));
+            Subteam(p),
+            Int((runes?["keystone"] as JsonObject)?["id"]), Int((runes?["secondaryRuneTree"] as JsonObject)?["id"]));
     }
 
     static string Subteam(JsonNode p)

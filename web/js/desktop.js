@@ -484,14 +484,16 @@ const Desktop = (() => {
     for (const p of m.players || []) {
       const c = st.champBySlug.get(String(p.champion || '').toLowerCase());
       const role = API.roleFromPosition(p.position);
-      players[p.riotId] = {
-        champ: c ? { name: c.name, icon: c.icon } : { name: p.champion || '?', icon: '' },
+      players[playerKey(p)] = {
+        champ: c ? { id: c.key, name: c.name, icon: c.icon } : { name: p.champion || '?', icon: '' },
         role: role?.label || '',
         stats: c ? statFor(c.key, role) : null,
       };
     }
     // "SummonerFlash" -> ikona (z URL ikony v Data Dragonu)
     const spells = Object.fromEntries([...st.spells.values()].map(s => [s.icon.split('/').pop().replace('.png', ''), s.icon]));
+    // Keystone a vedlejší strom run každého hráče (id ze hry) -> název a ikona
+    const runes = Object.fromEntries([...st.runes.values(), ...st.styles.values()].map(r => [r.id, { name: r.name, icon: r.icon }]));
 
     const b = data.build;
     const item = id => ({ id, name: st.itemName(id) || t('item.unknown', { id }), icon: st.itemIcon(id) });
@@ -506,6 +508,7 @@ const Desktop = (() => {
       me: m.me,
       itemBase: `https://ddragon.leagueoflegends.com/cdn/${st.itemVersion}/img/item/`,
       spells,
+      runes,
       players,
       build: b && b.matches ? {
         ...overlayBuild(data),
@@ -521,6 +524,26 @@ const Desktop = (() => {
       } : null,
       arena: !!q.arena,
       mayhem: !!q.mayhem,
+    };
+  }
+
+  // Keystone + vedlejší strom: Conqueror, Electrocute, Arcane Comet, Grasp, Press the Attack, Summon Aery
+  const DEMO_RUNES = [[8010, 8400], [8112, 8200], [8229, 8300], [8437, 8000], [8005, 8100], [8214, 8400]]
+    .map(([keystone, subStyle]) => ({ keystone, subStyle }));
+
+  // Ukázkový profil hráče jako z LoL klienta: úroveň účtu a 20 vymyšlených zápasů.
+  // Výhry a prohry v rankedu zná klient jen u tvého účtu – u ostatních chodí null.
+  function demoProfile(n, champKey, solo, self, queue = 420, mode = 'CLASSIC') {
+    const now = Date.now();
+    const history = Array.from({ length: 20 }, (_, i) => ({
+      champ: (i + n) % 3 === 0 || (n % 4 === 1 && i < 9) ? champKey : 1 + ((i * 7 + n * 13) % 160),
+      win: (i * (n + 3) + n) % 5 < 3 - (n % 2) || (n % 5 === 2 && i < 4),
+      k: (i + n) % 11, d: (i * 3 + n) % 8, a: (i * 5 + n) % 14,
+      queue, mode, time: now - (i + 1) * 3_600_000, dur: 1500 + ((i * 37) % 600),
+    }));
+    return {
+      ranked: true, solo: self ? solo : { ...solo, wins: null, losses: null }, flex: null,
+      level: 30 + ((n * 137) % 900), privacy: 'PUBLIC', history,
     };
   }
 
@@ -560,9 +583,9 @@ const Desktop = (() => {
           kills: k, deaths: d, assists: a, cs: pos === 'UTILITY' ? 20 + n : pos === 'JUNGLE' ? 90 + n * 3 : 120 + n * 6,
           items: mine ? (data.build?.core?.items || []).slice(0, 2).concat([3340]) : [commonItems[n % 14], commonItems[(n + 5) % 14], 3340],
           spells: ['SummonerFlash', pos === 'JUNGLE' ? 'SummonerSmite' : 'SummonerDot'],
-          isDead: n === 7, respawn: n === 7 ? 23 : 0,
+          isDead: n === 7, respawn: n === 7 ? 23 : 0, ...DEMO_RUNES[n % DEMO_RUNES.length],
         });
-        ranks[riotId] = { solo: { tier: tiers[n % 10], division: tiers[n % 10] === 'MASTER' ? 'NA' : divs[n % 4], lp: (n * 23) % 100, wins: 40 + n * 7, losses: 38 + n * 6 } };
+        ranks[riotId] = demoProfile(n, champ.key, { tier: tiers[n % 10], division: tiers[n % 10] === 'MASTER' ? 'NA' : divs[n % 4], lp: (n * 23) % 100, wins: 40 + n * 7, losses: 38 + n * 6 }, mine);
         n++;
       }
     }
@@ -598,7 +621,7 @@ const Desktop = (() => {
         spells: [], isDead: n === 5, respawn: n === 5 ? 8 : 0,
       });
       const tier = tiers[n % 8];
-      ranks[riotId] = { solo: { tier, division: ['I', 'II', 'III', 'IV'][n % 4], lp: (n * 17) % 100, wins: 30 + n * 5, losses: 28 + n * 4 } };
+      ranks[riotId] = demoProfile(n, champ.key, { tier, division: ['I', 'II', 'III', 'IV'][n % 4], lp: (n * 17) % 100, wins: 30 + n * 5, losses: 28 + n * 4 }, mine, 1700, 'CHERRY');
     });
     const live = {
       champion: data.champ.id, position: '', gameMode: 'CHERRY', gameTime: 640, level: 9,

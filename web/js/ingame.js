@@ -2,9 +2,10 @@
 
 /*
  * Herní panel (Ctrl+X). Jen vykresluje data, která posílá desktopová appka:
- *   {type:'info', info}   – šampioni s tierem/WR, tvůj build, karty a prizmatické itemy
- *   {type:'live', live}   – živá data ze hry (hráči, KDA, itemy, úroveň) – chodí každou sekundu
- *   {type:'ranks', ranks} – ranky hráčů z LoL klienta { "Jméno#TAG": {solo, flex} | null }
+ *   {type:'info', info}   – šampioni s tierem/WR, ikony run a kouzel, tvůj build, karty a prizmatické itemy
+ *   {type:'live', live}   – živá data ze hry (hráči, KDA, CS, itemy, runy, úroveň) – chodí každou sekundu
+ *   {type:'ranks', ranks} – hráči z LoL klienta { "Jméno#TAG": {ranked, solo, flex, level, privacy, history} | null };
+ *                           history (posledních 20 zápasů) přichází až po rankách
  *   {type:'prefs', lang, accent} – jazyk a barva z nastavení hlavního okna
  * Každá část se překresluje zvlášť a jen když se změní, takže scrollování neskáče nahoru.
  */
@@ -127,29 +128,96 @@ function itemImg(id, cls = 'it') {
   return `<img class="${cls}" src="${base}${id}.png" alt="" onerror="${fallback}">`;
 }
 
+// Údaje o hráčích z LoL klienta (MainForm.FetchRanksAsync): ranky, úroveň účtu a posledních 20 zápasů.
+// Klíč chybí = ještě se načítá, null = nepodařilo se
+const seasonText = q => (q?.prevTier && TIER_NAMES[q.prevTier]
+  ? t('pl.lastSeason', { rank: TIER_NAMES[q.prevTier] + (q.prevDivision && q.prevDivision !== 'NA' ? ' ' + q.prevDivision : '') }) : '');
+
 function rankOf(riotId) {
   if (!(riotId in S.ranks)) return { loading: true };
   const r = S.ranks[riotId];
+  if (r?.ranked === false) return {}; // ranky nepřišly (zbytek se ukáže)
   const q = r?.solo?.tier ? { ...r.solo, flex: false } : r?.flex?.tier ? { ...r.flex, flex: true } : null;
-  return q ? { q } : { none: !!r };
+  return q ? { q } : { none: !!r, prev: seasonText(r?.solo) || seasonText(r?.flex) };
 }
 
 function rankHtml(riotId, isBot, compact) {
   if (isBot) return `<span class="rank muted">${t('bot')}</span>`;
-  const { loading, q, none } = rankOf(riotId);
+  const { loading, q, none, prev } = rankOf(riotId);
   if (loading) return '<span class="rank muted"><span class="dots">…</span></span>';
-  if (!q) return `<span class="rank muted">${none ? t('unranked') : '—'}</span>`;
-  const games = q.wins + q.losses;
+  // Bez ranku v téhle sezóně: aspoň rank z minulé
+  if (!q) {
+    return `<span class="rank muted" title="${esc(prev || '')}"><span>${none ? t('unranked') : '—'}${prev && !compact ? `<br><small>${esc(prev)}</small>` : ''}</span></span>`;
+  }
+  // Výhry a prohry ostatních hráčů Riot neposílá (null) – win rate z rankedu jde jen u vlastního účtu,
+  // u ostatních je forma z posledních zápasů ve vedlejším sloupci
+  const games = q.losses != null ? q.wins + q.losses : 0;
+  const wr = games ? `<small class="${wrClass(q.wins / games)}">${pct(q.wins / games)}</small>` : '';
   const div = q.division && q.division !== 'NA' ? q.division : '';
   const crest = `<img class="crest" src="${CREST}${q.tier.toLowerCase()}.svg" alt="" onerror="this.remove()">`;
+  const tip = [seasonText(q), q.losses == null ? t('ig.lossesHidden') : ''].filter(Boolean).join('\n');
   if (compact) {
-    return `<span class="rank">${crest}<b>${TIER_SHORT[q.tier] || q.tier}${DIV_NUM[div] || ''}</b>
-      <small class="${games ? wrClass(q.wins / games) : ''}">${games ? pct(q.wins / games) : ''}</small></span>`;
+    return `<span class="rank" title="${esc(tip)}">${crest}<b>${TIER_SHORT[q.tier] || q.tier}${DIV_NUM[div] || ''}</b>${wr}</span>`;
   }
-  return `<span class="rank">${crest}
-    <span><b>${q.flex ? 'Flex · ' : ''}${TIER_NAMES[q.tier] || q.tier}${div ? ' ' + div : ''}</b> <small>${q.lp} LP</small><br>
-    <small class="${games ? wrClass(q.wins / games) : ''}">${games ? pct(q.wins / games) : '–'}</small> <small class="muted">${t('games', { n: games })}</small></span>
+  return `<span class="rank" title="${esc(tip)}">${crest}
+    <span><b>${q.flex ? 'Flex · ' : ''}${TIER_NAMES[q.tier] || q.tier}${div ? ' ' + div : ''}</b> <small>${q.lp} LP</small>${games
+      ? `<br>${wr} <small class="muted">${t('games', { n: games })}</small>` : ''}</span>
   </span>`;
+}
+
+// ---------- Forma z posledních zápasů ----------
+
+const CUSTOM_QUEUES = new Set([0, 3100]);
+// Celá procenta – u 20 zápasů jsou desetiny zbytečné (formát podle jazyka, ten se může změnit)
+const pct0Fmt = {};
+const pct0 = x => (pct0Fmt[I18N.intl] ??= new Intl.NumberFormat(I18N.intl, { style: 'percent', maximumFractionDigits: 0 })).format(x);
+
+// Poslední zápasy (bez remaků, vlastních her a tréninku), nejnovější první
+function formOf(riotId, champId) {
+  const games = (S.ranks[riotId]?.history || [])
+    .filter(g => g.dur >= 300 && !CUSTOM_QUEUES.has(g.queue) && g.mode !== 'PRACTICETOOL')
+    .sort((a, b) => b.time - a.time);
+  if (!games.length) return null;
+  const wins = games.filter(g => g.win).length;
+  let streak = 1;
+  while (streak < games.length && games[streak].win === games[0].win) streak++;
+  return {
+    games, wins, losses: games.length - wins, wr: wins / games.length,
+    streak: games[0].win ? streak : -streak,
+    onChamp: champId ? games.filter(g => g.champ === champId) : null,
+  };
+}
+
+// Tooltip s podrobnostmi (normálně u sloupce s formou, v Areně u jména)
+function formTip(f, champ) {
+  const tips = [t('ig.formTip', { games: t('games', { n: f.games.length }), wl: t('pl.wl', { w: f.wins, l: f.losses }), wr: pct(f.wr) })];
+  if (Math.abs(f.streak) >= 3) tips.push(t(f.streak > 0 ? 'ig.streakTipW' : 'ig.streakTipL', { n: Math.abs(f.streak) }));
+  if (f.onChamp) {
+    const cg = f.onChamp.length;
+    tips.push(cg
+      ? t('ig.champTip', { champ: champ.name, games: t('games', { n: cg }), n: f.games.length, wr: pct(f.onChamp.filter(g => g.win).length / cg) })
+      : t('ig.champTipNone', { champ: champ.name, n: f.games.length }));
+  }
+  return tips.join('\n');
+}
+
+function formHtml(p, champ) {
+  if (p.isBot) return '';
+  const r = S.ranks[p.riotId];
+  // Historie chodí až po rankách (r.history chybí = ještě se načítá)
+  if (!(p.riotId in S.ranks) || (r && r.history === undefined)) return '<span class="muted"><span class="dots">…</span></span>';
+  const f = formOf(p.riotId, champ.id);
+  if (!f) return `<small class="muted">${!r ? '—' : r.privacy === 'PRIVATE' ? t('ig.historyHidden') : t('ig.noHistory')}</small>`;
+  // Proužek posledních 10 zápasů: nejstarší vlevo, nejnovější vpravo
+  const strip = f.games.slice(0, 10).reverse().map(g => `<i class="${g.win ? 'w' : 'l'}"></i>`).join('');
+  const n = Math.abs(f.streak);
+  const streak = n >= 3 ? `<span class="streak ${f.streak > 0 ? 'w' : 'l'}">${t(f.streak > 0 ? 'ig.streakW' : 'ig.streakL', { n })}</span>` : '';
+  const cg = f.onChamp?.length;
+  return `<div class="form" title="${esc(formTip(f, champ))}">
+    <span class="form-top"><span class="fstrip">${strip}</span>${f.games.length >= 5
+      ? `<b class="${wrClass(f.wr)}">${pct0(f.wr)}</b>` : `<small>${t('pl.wl', { w: f.wins, l: f.losses })}</small>`}${streak}</span>
+    ${f.onChamp ? `<small class="${cg ? '' : 'new'}">${esc(champ.name)}: ${t('games', { n: cg })}</small>` : ''}
+  </div>`;
 }
 
 function champStat(st) {
@@ -160,24 +228,35 @@ function champStat(st) {
 }
 
 function playerRow(p, isMe, compact) {
-  const pi = S.info?.players?.[p.riotId];
+  const pi = S.info?.players?.[playerKey(p)];
   const champ = pi?.champ || { name: p.champion, icon: '' };
   const name = p.riotId.split('#')[0] || champ.name;
   const items = (p.items || []).slice(0, 7).map(id => itemImg(id)).join('');
   const spells = compact ? '' : (p.spells || []).map(s => S.info?.spells?.[s] ? `<img class="sp" src="${S.info.spells[s]}" alt="">` : '').join('');
+  // Keystone a vedlejší strom run (hra je posílá u všech hráčů, v Areně ne)
+  const runes = compact ? '' : [[p.keystone, 'ks'], [p.subStyle, 'sub']]
+    .map(([id, cls]) => S.info?.runes?.[id] ? `<img class="${cls}" src="${S.info.runes[id].icon}" alt="" title="${esc(S.info.runes[id].name)}">` : '').join('');
+  const minutes = (S.live?.gameTime || 0) / 60;
   const kda = p.deaths ? (p.kills + p.assists) / p.deaths : p.kills + p.assists;
+  // Úroveň účtu (z LoL klienta) – u ikony šampiona je úroveň ve hře
+  const level = S.ranks[p.riotId]?.level;
+  // Pod 30 nejde hrát ranked – nový (nebo nový druhý) účet
+  const lvl = level ? `<span class="acc-lvl ${level < 30 ? 'low' : ''}" title="${esc(t('ig.lvlTip', { n: level }))}">${t('ig.lvl', { n: level })}</span>` : '';
+  const f = compact ? formOf(p.riotId, champ.id) : null;
   return `<div class="row ${compact ? 'compact' : ''} ${isMe ? 'me' : ''} ${p.isDead ? 'dead' : ''}">
     <div class="champ">
       ${champ.icon ? `<img src="${champ.icon}" alt="">` : '<span class="ph"></span>'}
-      <span class="lvl">${p.level}</span>
+      <span class="lvl" title="${esc(t('ig.champLvlTip'))}">${p.level}</span>
       ${p.isDead ? `<span class="respawn">${Math.ceil(p.respawn)}</span>` : ''}
     </div>
-    ${compact ? '' : `<div class="spells">${spells}</div>`}
-    <div class="who"><b>${esc(name)}</b><small>${esc(champ.name)}${pi?.role && !compact ? ' · ' + esc(pi.role) : ''}</small></div>
+    ${compact ? '' : `<div class="spells">${spells}</div><div class="prunes">${runes}</div>`}
+    <div class="who"${f ? ` title="${esc(formTip(f, champ))}"` : ''}><span class="nm"><b>${esc(name)}</b>${compact ? '' : lvl}</span>
+      <small>${esc(champ.name)}${pi?.role && !compact ? ' · ' + esc(pi.role) : ''}${compact && level ? ' · ' + t('ig.lvl', { n: level }) : ''}</small></div>
     <div class="rank-cell">${rankHtml(p.riotId, p.isBot, compact)}</div>
+    ${compact ? '' : `<div class="form-cell">${formHtml(p, champ)}</div>`}
     <div class="cstat">${champStat(pi?.stats)}</div>
     <div class="kda"><b>${p.kills}/${p.deaths}/${p.assists}</b>${compact ? '' : `<small>${nf1(kda)} KDA</small>`}</div>
-    ${compact ? '' : `<div class="cs"><b>${p.cs}</b><small>CS</small></div>`}
+    ${compact ? '' : `<div class="cs" title="CS"><b>${p.cs}</b><small>${minutes >= 2 ? t('pl.perMin', { n: nf1(p.cs / minutes) }) : 'CS'}</small></div>`}
     <div class="items">${items}</div>
   </div>`;
 }
