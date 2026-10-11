@@ -175,6 +175,11 @@ function route() {
   window.scrollTo(0, 0);
   if (parts[0] === 'settings') return Settings.render();
   if (parts[0] === 'players') return Players.renderSearchPage();
+  if (parts[0] === 'compare') {
+    return Compare.render(parts.slice(1).map(x => {
+      try { return decodeURIComponent(x); } catch { return x; } // ručně upravená adresa
+    }));
+  }
   if (parts[0] === 'player' && parts[1] && parts[2]) {
     return Players.renderProfile(decodeURIComponent(parts[1]), decodeURIComponent(parts[2]));
   }
