@@ -62,7 +62,7 @@ NotLoL opens your champion's build as soon as you pick it. In ARAM it shows whet
 
 ### ⚙️ Stays out of your way
 
-NotLoL starts quietly with Windows and waits in the tray, updates itself, speaks Czech, Slovak, English, German and Polish, and comes in six accent colors. It keeps an hourly backup of all its data, so it keeps working even when a data source goes down. You can also look up any player by Riot ID and click any match in their history to see every player's damage, gold, CS, vision and items. Your own profile sits in the top right corner.
+NotLoL starts quietly with Windows and waits in the tray, updates itself, speaks Czech, Slovak, English, German and Polish, and comes in six accent colors. It keeps an hourly backup of all its data, so it keeps working even when a data source goes down. You can also look up any player by Riot ID: see the roles and game modes they play, who they play with most, their champion mastery and stats like damage per minute or kill participation, and click any match in their history to see every player's damage, gold, CS, vision and items. Your own profile sits in the top right corner.
 
 ![Settings](docs/images/settings.png)
 

@@ -787,6 +787,29 @@ public sealed class MainForm : Form
                 }
                 break;
             }
+            case "history":
+            {
+                // Další stránka historie zápasů (profil hráče → „Načíst další zápasy“)
+                var id = msg["id"]?.GetValue<int>() ?? 0;
+                var puuid = msg["puuid"] is JsonValue pv && pv.TryGetValue<string>(out var p) ? p : "";
+                int beg = msg["begIndex"] is JsonValue bv && bv.TryGetValue<int>(out var b) ? b : 0;
+                if (!lcu.Connected || puuid.Length == 0)
+                {
+                    PostToWeb(new { type = "result", id, ok = false, message = Loc.T("matchNeedClient", "Podrobnosti zápasu načítá LoL klient – musí běžet.") });
+                    break;
+                }
+                try
+                {
+                    var games = await lcu.GetMatchHistoryAsync(puuid, Math.Max(0, beg));
+                    if (games == null) PostToWeb(new { type = "result", id, ok = false, message = Loc.T("matchFail", "Zápas se nepodařilo načíst.") });
+                    else PostToWeb(new { type = "result", id, ok = true, message = "", data = games });
+                }
+                catch (Exception ex)
+                {
+                    PostToWeb(new { type = "result", id, ok = false, message = Loc.T("clientError", "Chyba při komunikaci s klientem: {0}", ex.Message) });
+                }
+                break;
+            }
             case "matchDetail":
             {
                 var id = msg["id"]?.GetValue<int>() ?? 0;

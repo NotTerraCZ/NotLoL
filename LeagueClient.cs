@@ -304,15 +304,21 @@ sealed class LeagueClient : IDisposable
         };
     }
 
-    /// <summary>Profil hráče: účet, ranky a posledních 20 zápasů. Funguje jen pro region, ve kterém je přihlášený klient.</summary>
+    /// <summary>
+    /// Profil hráče: účet, ranky, posledních 20 zápasů a šampioni s nejvíc body mistrovství.
+    /// Funguje jen pro region, ve kterém je přihlášený klient.
+    /// </summary>
     public async Task<(bool ok, string message, JsonObject? data)> LookupPlayerAsync(string gameName, string tagLine)
     {
         var puuid = await PuuidAsync(gameName, tagLine);
         if (puuid == null) return (false, Loc.T("playerNotFound", "Hráč {0} nebyl nalezen (hledá se jen na tvém serveru).", $"{gameName}#{tagLine}"), null);
 
-        var summoner = await GetAsync($"/lol-summoner/v2/summoners/puuid/{puuid}");
-        var ranked = await GetAsync($"/lol-ranked/v1/ranked-stats/{puuid}");
-        var history = await GetAsync($"/lol-match-history/v1/products/lol/{puuid}/matches?begIndex=0&endIndex=19");
+        var summonerTask = GetAsync($"/lol-summoner/v2/summoners/puuid/{puuid}");
+        var rankedTask = GetAsync($"/lol-ranked/v1/ranked-stats/{puuid}");
+        var historyTask = GetMatchHistoryAsync(puuid, 0);
+        var masteryTask = TryGetAsync($"/lol-champion-mastery/v1/{puuid}/champion-mastery"); // jen doplněk
+        await Task.WhenAll(summonerTask, rankedTask, historyTask, masteryTask);
+        var (summoner, ranked) = (summonerTask.Result, rankedTask.Result);
 
         return (true, "", new JsonObject
         {
@@ -324,8 +330,35 @@ sealed class LeagueClient : IDisposable
             ["privacy"] = summoner?["privacy"]?.GetValue<string>(),
             ["solo"] = CompactQueue(ranked?["queueMap"]?["RANKED_SOLO_5x5"], puuid == myPuuid),
             ["flex"] = CompactQueue(ranked?["queueMap"]?["RANKED_FLEX_SR"], puuid == myPuuid),
-            ["games"] = history?["games"]?["games"]?.DeepClone() ?? new JsonArray(),
+            ["games"] = historyTask.Result ?? new JsonArray(),
+            ["mastery"] = CompactMastery(masteryTask.Result),
         });
+    }
+
+    /// <summary>
+    /// 20 zápasů z historie hráče od daného pořadí (0 = nejnovější) – pro tlačítko „Načíst další zápasy“.
+    /// Zápasy jsou v podobě z LoL klienta (participants obsahuje jen tohoto hráče).
+    /// </summary>
+    public async Task<JsonArray?> GetMatchHistoryAsync(string puuid, int begIndex)
+    {
+        var history = await GetAsync($"/lol-match-history/v1/products/lol/{puuid}/matches?begIndex={begIndex}&endIndex={begIndex + 19}");
+        return ((history as JsonObject)?["games"] as JsonObject)?["games"] is JsonArray games ? (JsonArray)games.DeepClone() : null;
+    }
+
+    /// <summary>Šampioni s nejvíc body mistrovství (nejvýš 10): id, úroveň, body a kdy je hrál naposledy.</summary>
+    static JsonArray CompactMastery(JsonNode? node)
+    {
+        // Pole záznamů; pro jistotu i objekt, ve kterém je pole nebo záznamy podle šampiona
+        var entries = (node as JsonArray ?? (node as JsonObject)?.Select(kv => kv.Value).OfType<JsonArray>().FirstOrDefault())?.OfType<JsonObject>()
+            ?? (node as JsonObject)?.Select(kv => kv.Value).OfType<JsonObject>()
+            ?? [];
+        var top = entries
+            .Select(e => (champ: Num(e["championId"]) ?? 0, level: Num(e["championLevel"]) ?? 0, points: Num(e["championPoints"]) ?? 0, last: Num(e["lastPlayTime"]) ?? 0))
+            .Where(m => m.champ > 0 && m.points > 0)
+            .OrderByDescending(m => m.points)
+            .Take(10)
+            .Select(m => (JsonNode)new JsonObject { ["champ"] = m.champ, ["level"] = m.level, ["points"] = m.points, ["last"] = m.last });
+        return new JsonArray(top.ToArray());
     }
 
     /// <summary>
