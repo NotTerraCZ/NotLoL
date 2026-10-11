@@ -97,9 +97,10 @@ main { flex: 1; min-height: 0; display: flex; }
 .team-grid .team { background: var(--bg-2); border: 1px solid var(--line); border-radius: 10px; padding: 8px; }
 .team-grid .team.mine { border-color: rgba(79, 157, 255, .6); }
 
+/* Pevná šířka sloupců (i itemů – 7 × 22 px), ať jsou sloupce ve všech řádcích pod sebou */
 .row {
   display: grid;
-  grid-template-columns: 44px 22px minmax(110px, 1.2fr) minmax(150px, 1.3fr) 76px 78px 44px auto;
+  grid-template-columns: 44px 22px 22px minmax(110px, 1.2fr) minmax(140px, 1.1fr) minmax(136px, 1fr) 66px 64px 48px 172px;
   gap: 10px;
   align-items: center;
   padding: 5px 8px;
@@ -108,7 +109,7 @@ main { flex: 1; min-height: 0; display: flex; }
   border: 1px solid transparent;
   margin-bottom: 4px;
 }
-.row.compact { grid-template-columns: 36px minmax(70px, 1fr) 98px 58px 58px auto; gap: 7px; padding: 4px 6px; }
+.row.compact { grid-template-columns: 36px minmax(70px, 1fr) 98px 58px 58px 92px; gap: 7px; padding: 4px 6px; }
 .row.compact .rank { gap: 4px; white-space: nowrap; }
 .row.compact .champ, .row.compact .champ img, .row.compact .champ .ph { width: 36px; height: 36px; }
 .row.compact .it { width: 20px; height: 20px; }
@@ -125,8 +126,18 @@ main { flex: 1; min-height: 0; display: flex; }
 .respawn { position: absolute; inset: 0; display: grid; place-items: center; font-weight: 800; font-size: 15px; color: #fff; }
 .spells { display: grid; gap: 2px; }
 .spells .sp { width: 20px; height: 20px; border-radius: 4px; }
+.prunes { display: grid; justify-items: center; gap: 2px; }
+.prunes .ks { width: 22px; height: 22px; }
+.prunes .sub { width: 15px; height: 15px; opacity: .85; }
 .who { min-width: 0; display: grid; }
 .who b, .who small { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.who .nm { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.acc-lvl {
+  flex: 0 0 auto;
+  font-size: 10px; font-weight: 700; line-height: 15px; color: var(--muted);
+  background: var(--panel-2); border: 1px solid var(--line); border-radius: 5px; padding: 0 5px;
+}
+.acc-lvl.low { color: var(--wr-low); border-color: rgba(255, 165, 138, .45); }
 .rank { display: flex; align-items: center; gap: 6px; line-height: 1.25; }
 .rank b { font-size: 12px; }
 .crest { width: 26px; height: 26px; }
@@ -138,8 +149,22 @@ main { flex: 1; min-height: 0; display: flex; }
 .t-splus { background: #ff4e5a; } .t-s { background: #ff9a3c; } .t-a { background: #4f9dff; }
 .t-b { background: #4fd18b; } .t-c { background: #b7bdcf; } .t-d { background: #7a8099; } .t-none { background: var(--panel-2); color: var(--muted); }
 .kda, .cs { display: grid; font-variant-numeric: tabular-nums; }
+
+/* Forma z posledních zápasů */
+.form-cell { min-width: 0; overflow: hidden; }
+.form { display: grid; gap: 3px; min-width: 0; }
+.form-top { display: flex; align-items: center; gap: 5px; }
+.form-top b { font-size: 12px; font-variant-numeric: tabular-nums; }
+.fstrip { display: flex; gap: 2px; }
+.fstrip i { width: 4px; height: 14px; border-radius: 2px; background: var(--wr-bad); opacity: .8; }
+.fstrip i.w { background: var(--wr-great); }
+.streak { font-size: 10px; font-weight: 800; line-height: 15px; padding: 0 3px; border-radius: 4px; white-space: nowrap; }
+.streak.w { color: var(--wr-great); background: rgba(62, 224, 160, .14); }
+.streak.l { color: var(--wr-bad); background: rgba(255, 107, 107, .14); }
+.form small { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.form small.new { color: var(--wr-low); }
 .items { display: flex; gap: 3px; }
-.it { width: 24px; height: 24px; border-radius: 5px; background: var(--panel-2); }
+.it { width: 22px; height: 22px; border-radius: 5px; background: var(--panel-2); }
 
 /* ---------- Tvůj build ---------- */
 
@@ -206,6 +231,15 @@ main { flex: 1; min-height: 0; display: flex; }
 .prism-item .pr-name { grid-area: name; font-weight: 700; font-size: 14px; }
 .prism-item .pr-place { grid-area: place; font-weight: 800; font-size: 15px; }
 .prism-item .pr-sub { grid-area: sub; color: var(--muted); font-size: 12px; }
+
+/* Menší okno (např. notebook se zvětšením 125 %): užší build, bez kouzel a CS, itemy na dva řádky */
+@media (max-width: 1300px) {
+  .match-pane { grid-template-columns: minmax(0, 1fr) 300px; }
+  .row { grid-template-columns: 40px minmax(96px, 1.2fr) minmax(128px, 1.1fr) minmax(96px, 1fr) 64px 64px 122px; gap: 8px; }
+  .row .spells, .row .prunes, .row .cs, .row .streak { display: none; }
+  .row:not(.compact) .champ, .row:not(.compact) .champ img, .row:not(.compact) .champ .ph { width: 40px; height: 40px; }
+  .row:not(.compact) .items { flex-wrap: wrap; gap: 3px; }
+}
 
 ::-webkit-scrollbar { width: 8px; }
 ::-webkit-scrollbar-thumb { background: var(--line); border-radius: 4px; }

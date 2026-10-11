@@ -47,6 +47,10 @@ const RANK_COLORS = {
   DIAMOND: '#7d9bff', MASTER: '#c06bff', GRANDMASTER: '#ff5a5a', CHALLENGER: '#f6d37a',
 };
 
+// Klíč hráče v zápase (hlavní okno i herní panel). Ve streamer módu hra místo Riot ID posílá jen "#",
+// takže skryté hráče rozliší až tým a šampion.
+const playerKey = p => (p.riotId && !p.riotId.startsWith('#') ? p.riotId : `#${p.team}|${p.champion}`);
+
 // ---------- Oznámení ----------
 
 let toastTimer = 0;

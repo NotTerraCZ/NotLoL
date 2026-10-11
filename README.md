@@ -55,7 +55,7 @@ NotLoL opens your champion's build as soon as you pick it. In ARAM it shows whet
 ### 🎮 In the game
 
 - A small **overlay** tells you which ability to level up next and shows your build, ticking off the items you've already bought.
-- <kbd>Ctrl</kbd> + <kbd>X</kbd> opens a **panel with every player** in the match – rank, KDA, items and how strong their champion is – next to your full build.
+- <kbd>Ctrl</kbd> + <kbd>X</kbd> opens a **panel with every player** in the match – rank, account level, form in their last 20 games, how often they play their champion, runes, KDA, items and how strong their champion is – next to your full build.
 - In **Arena and ARAM: Mayhem**, NotLoL rates the augments and prismatic items you're offered **right on the cards**: the tier, how well each one fits your champion, and a gold frame around the best pick.
 
 ![In-game panel (Ctrl+X), shown with preview data](docs/images/ingame-panel.png)

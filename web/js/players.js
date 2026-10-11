@@ -259,7 +259,9 @@ const Players = (() => {
       return `<div class="rank-card unranked"><div class="rc-emblem none">?</div>
         <div class="rc-text"><small>${label}</small><b>${t('unranked')}</b>${prev}</div></div>`;
     }
-    const games = q.wins + q.losses;
+    // Výhry a prohry ostatních hráčů Riot neposílá (null) – win rate je pak jen v souhrnu posledních zápasů
+    const known = q.losses != null;
+    const games = known ? q.wins + q.losses : 0;
     const div = q.division && q.division !== 'NA' ? ' ' + q.division : '';
     const wr = games ? q.wins / games : 0;
     return `<div class="rank-card" style="--tc:${RANK_COLORS[q.tier] || 'var(--accent)'}">
@@ -268,8 +270,9 @@ const Players = (() => {
       <div class="rc-text">
         <small>${label}</small>
         <b>${TIER_NAMES[q.tier] || q.tier}${div} <span class="lp">${q.lp} LP</span></b>
-        <span><span class="${games ? wrClass(wr) : ''}">${games ? pct(wr) : '–'}</span>
-          <small>${t('pl.wl', { w: q.wins, l: q.losses })}</small></span>
+        ${known ? `<span><span class="${games ? wrClass(wr) : ''}">${games ? pct(wr) : '–'}</span>
+          <small>${t('pl.wl', { w: q.wins, l: q.losses })}</small></span>`
+          : `<small>${t('pl.lossesHidden')}</small>`}
         ${games ? `<span class="wr-bar"><i style="width:${(wr * 100).toFixed(1)}%"></i></span>` : ''}
         ${prev}
       </div>

@@ -906,19 +906,57 @@ public sealed class MainForm : Form
         p.ShowOn(Screen.FromHandle(GetForegroundWindow()));
     }
 
-    // Ranky všech hráčů v zápase (přes LoL klient), postupně jak přicházejí
+    // Ranky, úroveň účtu a poslední zápasy všech hráčů v zápase (přes LoL klient), postupně jak přicházejí.
+    // Nejdřív ranky a úrovně (rychlé), potom historie zápasů (zhruba sekunda na hráče).
     async Task FetchRanksAsync(string key, List<LiveGame.Player> players)
     {
+        var todo = new List<LiveGame.Player>();
         foreach (var pl in players)
         {
-            if (gameKey != key) return;
-            if (pl.IsBot || !pl.RiotId.Contains('#') || ranks.ContainsKey(pl.RiotId)) continue;
+            if (pl.IsBot || ranks.ContainsKey(pl.RiotId)) continue;
+            // Bez Riot ID (Jméno#TAG, ve streamer módu hra posílá jen "#") hráče dohledat nejde –
+            // panel ukáže pomlčku místo věčného načítání
+            if (pl.RiotId.IndexOf('#') > 0) todo.Add(pl);
+            else ranks[pl.RiotId] = null;
+        }
+        await ForEachPlayerAsync(key, todo, async pl =>
+        {
             JsonObject? r = null;
-            try { if (lcu.Connected) r = await lcu.GetRankAsync(pl.RiotId); }
+            try { if (lcu.Connected) r = await lcu.GetPlayerAsync(pl.RiotId); }
             catch { /* klient neodpověděl */ }
+            if (gameKey != key) return;
             ranks[pl.RiotId] = r;
             panel?.Post(new { type = "ranks", ranks });
-        }
+        });
+        await ForEachPlayerAsync(key, todo, async pl =>
+        {
+            if (ranks.GetValueOrDefault(pl.RiotId) is not JsonObject r) return;
+            JsonArray? games = null;
+            try { if (lcu.Connected) games = await lcu.GetRecentGamesAsync(pl.RiotId); }
+            catch { /* klient neodpověděl */ }
+            if (gameKey != key) return;
+            r["history"] = games;
+            panel?.Post(new { type = "ranks", ranks });
+        });
+    }
+
+    // Po třech hráčích najednou – rychlejší než jeden po druhém, ale klient se nezahltí.
+    // Pokračování běží zpátky ve vlákně okna, takže "ranks" se mění jen odtud.
+    async Task ForEachPlayerAsync(string key, List<LiveGame.Player> players, Func<LiveGame.Player, Task> load)
+    {
+        using var gate = new SemaphoreSlim(3);
+        await Task.WhenAll(players.Select(async pl =>
+        {
+            await gate.WaitAsync();
+            try
+            {
+                if (gameKey == key) await load(pl);
+            }
+            finally
+            {
+                gate.Release();
+            }
+        }));
     }
 
     // ---------- Sledování klienta a hry ----------
