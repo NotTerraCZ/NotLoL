@@ -60,7 +60,7 @@ const Desktop = (() => {
   // Nastavení pro desktopovou část: overlay, jazyk a přeložené texty (tray, overlay, hlášky)
   const sendSettings = () => send({
     type: 'settings', overlay: !!state.overlay, cards: state.cardLabels !== false,
-    lang: I18N.code, accent: state.accent, native: I18N.native(),
+    lang: I18N.code, accent: state.accent, native: I18N.native(), hotkeys: Settings.hotkeyList(),
   });
 
   function paintStatus() {
@@ -820,6 +820,8 @@ const Desktop = (() => {
     setAutostart: on => send({ type: 'setAutostart', enabled: !!on }),
     backupNow: () => send({ type: 'backupNow' }),
     checkUpdate: () => send({ type: 'checkUpdate' }),
+    // Během nahrávání nové zkratky v Nastavení vypne zaregistrované zkratky, aby stisk dostala stránka
+    hotkeyCapture: on => send({ type: 'hotkeyCapture', on: !!on }),
     applyUpdate,
     active: !!host,
     get client() { return client; },

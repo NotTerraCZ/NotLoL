@@ -363,7 +363,8 @@ sealed class OverlayForm : Form
         if (b.Core.Count > 0) y = ItemRow(g, Loc.T("ovCore", "CORE BUILD"), b.Core, pad, y, 36, fSmall);
         if (b.Next.Count > 0) y = ItemRow(g, Loc.T("ovNext", "DALŠÍ ITEMY"), b.Next, pad, y, 32, fSmall);
 
-        var hint = moveMode ? Loc.T("ovHintMove", "Přetáhni myší · Ctrl+Shift+M hotovo") : Loc.T("ovHint", "Ctrl+Shift+H skrýt · Ctrl+Shift+M přesunout");
+        string hide = Hotkeys.Get(Hotkeys.Overlay).Label, move = Hotkeys.Get(Hotkeys.Move).Label;
+        var hint = moveMode ? Loc.T("ovHintMove", "Přetáhni myší · {0} hotovo", move) : Loc.T("ovHint", "{0} skrýt · {1} přesunout", hide, move);
         DrawText(g, hint, fSmall, moveMode ? Accent : Color.FromArgb(93, 101, 130), pad, y);
         return y + 14 + pad;
     }

@@ -120,6 +120,7 @@ public sealed class MainForm : Form
         winEventProc = (_, _, _, _, _, _, _) => BringOverlaysToTop();
         keyHook.Filter = GameInForeground;
         keyHook.Pressed += id => BeginInvoke(() => HotkeyAction(id));
+        Hotkeys.Changed += OnHotkeysChanged;
 
         // Spouštění se systémem: při prvním spuštění zapnout, jinak jen opravit cestu k .exe
         if (!settings.AutostartInitialized)
@@ -246,7 +247,7 @@ public sealed class MainForm : Form
         }
         LabelTray();
         overlay?.Invalidate();
-        panel?.Post(new { type = "prefs", lang = uiLang, accent = uiAccent });
+        panel?.Post(new { type = "prefs", lang = uiLang, accent = uiAccent, panelKey = Hotkeys.Get(Hotkeys.Panel).Label });
     }
 
     void PostMe()
@@ -412,14 +413,14 @@ public sealed class MainForm : Form
 
         switch (id)
         {
-            case GameKeyHook.TogglePanel:
+            case Hotkeys.Panel:
                 TogglePanel();
                 break;
-            case GameKeyHook.ToggleOverlay:
+            case Hotkeys.Overlay:
                 overlayHidden = !overlayHidden;
                 UpdateOverlay();
                 break;
-            case GameKeyHook.MoveOverlay when overlay != null:
+            case Hotkeys.Move when overlay != null:
                 overlayHidden = false;
                 UpdateOverlay();
                 overlay.ToggleMoveMode();
@@ -702,6 +703,7 @@ public sealed class MainForm : Form
                 PostMe();
                 if (champSelect != null) PostChampSelect();
                 if (game != null) PostGame(game);
+                PauseHotkeys(false);
                 backupRunning = false;
                 if (!backupTimer.Enabled)
                 {
@@ -735,9 +737,13 @@ public sealed class MainForm : Form
             case "settings":
                 overlayEnabled = msg["overlay"]?.GetValue<bool>() ?? true;
                 cardLabelsEnabled = msg["cards"]?.GetValue<bool>() ?? true;
+                Hotkeys.Set(msg["hotkeys"]);
                 ApplyUiSettings(msg);
                 UpdateOverlay();
                 UpdateAugScan();
+                break;
+            case "hotkeyCapture":
+                PauseHotkeys(msg["on"]?.GetValue<bool>() == true);
                 break;
             case "overlayBuild":
                 SetAugmentData(msg["augScan"]);
@@ -927,7 +933,7 @@ public sealed class MainForm : Form
             if (panelDemo && gameKey == null) panelDemo = false;
             UpdateHotkeys();
         };
-        panel.Post(new { type = "prefs", lang = uiLang, accent = uiAccent });
+        panel.Post(new { type = "prefs", lang = uiLang, accent = uiAccent, panelKey = Hotkeys.Get(Hotkeys.Panel).Label });
         return panel;
     }
 
@@ -1149,7 +1155,7 @@ public sealed class MainForm : Form
     }
 
     // Zkratky platí jen během hry (nebo ukázky), jinak zůstanou Windows a ostatním appkám:
-    // Ctrl+X = herní panel, Ctrl+Shift+H = skrýt/zobrazit overlay, Ctrl+Shift+M = přesouvání overlaye
+    // herní panel, skrýt/zobrazit overlay a přesouvání overlaye (výchozí Ctrl+X, Ctrl+Shift+H, Ctrl+Shift+M – viz Hotkeys)
     void UpdateHotkeys() => SetHotkeys(gameKey != null || overlayDemo || panelDemo);
 
     void SetHotkeys(bool on)
@@ -1158,18 +1164,45 @@ public sealed class MainForm : Form
         hotkeys = on;
         keepOnTop.Enabled = on;
         SetWinEventHooks(on);
-        if (on)
+        if (on && !hotkeysPaused) RegisterAll();
+        else if (!on) UnregisterAll();
+    }
+
+    // Nastavení zrovna nahrává novou zkratku: zaregistrované zkratky by stisk spolkly dřív, než ho stránka uvidí
+    bool hotkeysPaused;
+    void PauseHotkeys(bool pause)
+    {
+        if (pause == hotkeysPaused) return;
+        hotkeysPaused = pause;
+        if (!hotkeys) return;
+        if (pause) UnregisterAll();
+        else RegisterAll();
+    }
+
+    void RegisterAll()
+    {
+        foreach (var b in Hotkeys.All)
         {
-            RegisterHotKey(Handle, 1, MOD_CONTROL | MOD_SHIFT | MOD_NOREPEAT, (uint)Keys.H);
-            RegisterHotKey(Handle, 2, MOD_CONTROL | MOD_SHIFT | MOD_NOREPEAT, (uint)Keys.M);
-            RegisterHotKey(Handle, 3, MOD_CONTROL | MOD_NOREPEAT, (uint)Keys.X);
+            uint mods = MOD_NOREPEAT | (b.Ctrl ? MOD_CONTROL : 0) | (b.Shift ? MOD_SHIFT : 0) | (b.Alt ? MOD_ALT : 0);
+            RegisterHotKey(Handle, b.Id, mods, (uint)b.Vk); // obsazenou zkratku (jiná appka) zachytí ve hře aspoň hook
         }
-        else
+    }
+
+    void UnregisterAll()
+    {
+        foreach (var id in new[] { Hotkeys.Overlay, Hotkeys.Move, Hotkeys.Panel }) UnregisterHotKey(Handle, id);
+    }
+
+    // Nové zkratky z Nastavení: hned přeregistrovat (i uprostřed hry) a ukázat je v nápovědách
+    void OnHotkeysChanged()
+    {
+        if (hotkeys && !hotkeysPaused)
         {
-            UnregisterHotKey(Handle, 1);
-            UnregisterHotKey(Handle, 2);
-            UnregisterHotKey(Handle, 3);
+            UnregisterAll();
+            RegisterAll();
         }
+        overlay?.Invalidate();
+        panel?.Post(new { type = "prefs", lang = uiLang, accent = uiAccent, panelKey = Hotkeys.Get(Hotkeys.Panel).Label });
     }
 
     protected override void WndProc(ref Message m)
@@ -1252,7 +1285,7 @@ public sealed class MainForm : Form
     const int DWMWA_USE_IMMERSIVE_DARK_MODE = 20;
     const int DWMWA_CAPTION_COLOR = 35;
     const int WM_HOTKEY = 0x0312;
-    const uint MOD_CONTROL = 0x2, MOD_SHIFT = 0x4, MOD_NOREPEAT = 0x4000;
+    const uint MOD_ALT = 0x1, MOD_CONTROL = 0x2, MOD_SHIFT = 0x4, MOD_NOREPEAT = 0x4000;
 
     [DllImport("dwmapi.dll")]
     static extern int DwmSetWindowAttribute(IntPtr hwnd, int attr, ref int value, int size);

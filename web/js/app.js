@@ -7,14 +7,14 @@ const view = $('#view');
 
 const PREFS_KEY = 'notlol.prefs.v1';
 const PREF_FIELDS = ['region', 'rank', 'queue', 'role', 'showAll', 'layout', 'sortKey', 'sortDir',
-  'autoOpen', 'autoImport', 'overlay', 'cardLabels', 'accent', 'motion'];
+  'autoOpen', 'autoImport', 'overlay', 'cardLabels', 'accent', 'motion', 'hotkeys'];
 const MIN_PICK = 0.005;
 
 const state = Object.assign(
   { patch: null, region: 'world', rank: 'emerald_plus', queue: 'ranked_solo_5x5', role: 'all',
     showAll: false, layout: 'table', sortKey: 'score', sortDir: -1,
     // Desktop: napojení na LoL klient
-    autoOpen: true, autoImport: false, overlay: true, cardLabels: true,
+    autoOpen: true, autoImport: false, overlay: true, cardLabels: true, hotkeys: {},
     // Vzhled
     accent: 'blue', motion: true },
   loadPrefs(),
