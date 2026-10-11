@@ -213,6 +213,7 @@ const Players = (() => {
     box.innerHTML = (cachedAt ? `<div class="banner info">${icon('info', 18)}<p>${t('me.cached', { date: esc(fmtDate(cachedAt)) })}</p></div>` : '')
       + profileHtml(data, st, mine);
     box.querySelector('[data-action="refresh-me"]')?.addEventListener('click', () => renderProfile(gameName, tagLine));
+    bindMatches(box, st, data.puuid);
   }
 
   // ---------- Profil ----------
@@ -233,6 +234,7 @@ const Players = (() => {
     const s = p.stats || {};
     const items = [s.item0, s.item1, s.item2, s.item3, s.item4, s.item5, s.item6].filter(Boolean);
     return {
+      id: g.gameId || null, // podle něj se dají načíst podrobnosti zápasu
       created: g.gameCreation || 0,
       duration: g.gameDuration || 0,
       queueId: g.queueId,
@@ -326,14 +328,17 @@ const Players = (() => {
       const cs = g.arena
         ? (g.placement ? `<b class="place-badge p${g.placement <= 4 ? 'top' : 'low'}">#${g.placement}</b>` : '')
         : `<b>${g.cs} CS</b><small>${t('pl.perMin', { n: nf1.format(perMin) })}</small>`;
-      return `<div class="match ${cls}">
+      // Se známým id jde zápas rozkliknout (podrobnosti se ukážou pod ním)
+      const open = g.id ? ` data-game="${g.id}" role="button" tabindex="0" aria-expanded="false" title="${esc(t('md.open'))}"` : '';
+      return `<div class="match-wrap"><div class="match ${cls}"${open}>
         <div class="m-res"><b>${result}</b><small>${esc(queueName(g))}</small><small>${I18N.ago(g.created)} · ${mmss(g.duration)}</small></div>
         <a href="${champHref(ch)}" class="m-champ"><img src="${ch.icon}" alt="${esc(ch.name)}" title="${esc(ch.name)}"></a>
         <div class="m-spells">${spells}</div>
         <div class="m-kda"><b>${g.k} / ${g.d} / ${g.a}</b><small>${nf2.format(kdaOf(g.k, g.d, g.a))} KDA</small></div>
         <div class="m-cs">${cs}</div>
         <div class="m-items">${items}</div>
-      </div>`;
+        ${g.id ? `<span class="m-more">${icon('chevron', 16)}</span>` : ''}
+      </div>${g.id ? '<div class="match-detail" hidden></div>' : ''}</div>`;
     }).join('') : `<div class="state"><p>${d.privacy === 'PRIVATE' ? t('pl.private') : t('pl.noGames')}</p></div>`;
 
     const q = d.solo?.tier ? d.solo : d.flex?.tier ? d.flex : null;
@@ -351,6 +356,190 @@ const Players = (() => {
         <div>${summary}</div>
         <div class="card"><h2>${t('pl.matches')}</h2><div class="matches">${matches}</div></div>
       </div>`;
+  }
+
+  // ---------- Podrobnosti zápasu (rozkliknutý zápas) ----------
+
+  const details = new Map(); // id zápasu -> odpověď LoL klienta (jednou načtený zápas se už nestahuje)
+  const num = n => I18N.int(Math.round(n || 0));
+  const pct0 = x => new Intl.NumberFormat(I18N.intl, { style: 'percent', maximumFractionDigits: 0 }).format(x);
+
+  function loadDetail(gameId) {
+    let p = details.get(gameId);
+    if (!p) {
+      p = Desktop.matchDetail(gameId).then(r => {
+        if (!r.ok || !r.data) details.delete(gameId); // příště to zkusit znovu
+        return r;
+      });
+      details.set(gameId, p);
+    }
+    return p;
+  }
+
+  // Klik (nebo Enter) na zápas rozbalí pod ním všechny hráče; odkazy v řádku fungují dál
+  function bindMatches(box, st, puuid) {
+    const toggle = async row => {
+      const panel = row.closest('.match-wrap')?.querySelector('.match-detail');
+      if (!panel) return;
+      const open = row.getAttribute('aria-expanded') !== 'true';
+      row.setAttribute('aria-expanded', String(open));
+      panel.hidden = !open;
+      if (!open || panel.dataset.state) return;
+      panel.dataset.state = 'loading';
+      panel.innerHTML = loadingBlock(t('md.loading'));
+      const r = await loadDetail(row.dataset.game);
+      let html = '';
+      try { if (r.ok && r.data) html = await detailHtml(r.data, st, puuid); } catch { /* nečekaná data */ }
+      if (html) {
+        panel.dataset.state = 'done';
+        panel.innerHTML = html;
+      } else {
+        delete panel.dataset.state; // po zavření a otevření se zkusí znovu
+        panel.innerHTML = `<p class="md-error">${icon('alert', 16)}${esc(r.message || t('md.fail'))}</p>`;
+      }
+    };
+    box.addEventListener('click', e => {
+      const row = e.target.closest('.match[data-game]');
+      if (row && !e.target.closest('a')) toggle(row);
+    });
+    box.addEventListener('keydown', e => {
+      if ((e.key === 'Enter' || e.key === ' ') && e.target.matches?.('.match[data-game]')) {
+        e.preventDefault();
+        toggle(e.target);
+      }
+    });
+  }
+
+  // Zápas z LoL klienta (/lol-match-history/v1/games/{id}) -> hráči se vším, co ukazujeme
+  function parseDetail(game) {
+    const who = new Map((game.participantIdentities || []).map(x => [x.participantId, x.player || {}]));
+    const players = (game.participants || []).map(p => {
+      const s = p.stats || {};
+      const id = who.get(p.participantId) || {};
+      return {
+        puuid: id.puuid || '',
+        gameName: id.gameName || id.summonerName || '',
+        tagLine: id.tagLine || '',
+        champId: p.championId,
+        team: p.teamId,
+        spells: [p.spell1Id, p.spell2Id],
+        keystone: s.perk0, subStyle: s.perkSubStyle,
+        level: s.champLevel || 0,
+        k: s.kills || 0, d: s.deaths || 0, a: s.assists || 0,
+        dmg: s.totalDamageDealtToChampions || 0,
+        phys: s.physicalDamageDealtToChampions || 0, magic: s.magicDamageDealtToChampions || 0, trueDmg: s.trueDamageDealtToChampions || 0,
+        taken: s.totalDamageTaken || 0,
+        gold: s.goldEarned || 0,
+        cs: (s.totalMinionsKilled || 0) + (s.neutralMinionsKilled || 0),
+        vision: s.visionScore || 0,
+        items: [s.item0, s.item1, s.item2, s.item3, s.item4, s.item5, s.item6].filter(Boolean),
+        win: !!s.win,
+        subteam: s.playerSubteamId || 0,
+        place: s.subteamPlacement || 0,
+        augments: [s.playerAugment1, s.playerAugment2, s.playerAugment3, s.playerAugment4, s.playerAugment5, s.playerAugment6].filter(Boolean),
+        multi: s.pentaKills ? 5 : s.quadraKills ? 4 : s.tripleKills ? 3 : 0,
+      };
+    });
+    return { players, teams: game.teams || [], minutes: (game.gameDuration || 0) / 60, arena: isArena(game) };
+  }
+
+  async function detailHtml(game, st, puuid) {
+    const d = parseDetail(game);
+    if (!d.players.length) return '';
+    const ctx = { st, puuid, arena: d.arena, minutes: d.minutes, maxDmg: Math.max(1, ...d.players.map(p => p.dmg)), augs: null };
+    // Arena: dvojice seřazené podle umístění, u hráčů karty (augmenty)
+    if (d.arena) {
+      ctx.augs = await API.getAugments().catch(() => null);
+      const duos = new Map();
+      for (const p of d.players) {
+        const key = p.subteam || `t${p.team}`;
+        if (!duos.has(key)) duos.set(key, []);
+        duos.get(key).push(p);
+      }
+      // Záhlaví sloupců jen nad první dvojicí
+      return [...duos.values()].sort((a, b) => (a[0].place || 99) - (b[0].place || 99)).map((ps, i) => {
+        const place = ps[0].place;
+        return teamHtml(ps, ctx, { cls: 'arena', win: place > 0 && place <= 4, title: place ? t('pl.place', { n: place }) : '—', labels: i === 0 });
+      }).join('');
+    }
+    // Ostatní módy: modrý a červený tým
+    return [100, 200].map(teamId => {
+      const ps = d.players.filter(p => p.team === teamId);
+      if (!ps.length) return '';
+      const team = d.teams.find(x => x.teamId === teamId) || {};
+      const win = team.win != null ? team.win === 'Win' || team.win === true : ps.some(p => p.win);
+      const obj = [
+        t('md.towers', { n: team.towerKills || 0 }),
+        team.dragonKills ? t('md.dragons', { n: team.dragonKills }) : '',
+        team.hordeKills ? t('md.grubs', { n: team.hordeKills }) : '',
+        team.riftHeraldKills ? t('md.heralds', { n: team.riftHeraldKills }) : '',
+        team.baronKills ? t('md.barons', { n: team.baronKills }) : '',
+      ].filter(Boolean).join(' · ');
+      const bans = (team.bans || []).filter(b => b.championId > 0).map(b => champOf(st, b.championId))
+        .map(c => `<img src="${c.icon}" alt="" title="${esc(c.name)}" loading="lazy">`).join('');
+      return teamHtml(ps, ctx, { cls: teamId === 100 ? 'blue' : 'red', win, title: win ? t('pl.win') : t('pl.loss'),
+        side: t(teamId === 100 ? 'md.blue' : 'md.red'), obj, bans });
+    }).join('');
+  }
+
+  function teamHtml(ps, ctx, { cls, win, title, side = '', obj = '', bans = '', labels: withLabels = true }) {
+    const sum = ps.reduce((s, p) => ({ k: s.k + p.k, d: s.d + p.d, a: s.a + p.a, gold: s.gold + p.gold }), { k: 0, d: 0, a: 0, gold: 0 });
+    const label = (text, c = '') => `<span class="${c}">${text}</span>`;
+    const labels = ctx.arena
+      ? [label(''), label(''), label('KDA'), label(t('md.dmg')), label(t('md.taken'), 'md-c-taken'), label(t('ig.cards')), label(t('card.items'), 'md-c-items')]
+      : [label(''), label('', 'md-icons'), label(''), label('KDA'), label(t('md.dmg')), label(t('md.taken'), 'md-c-taken'), label(t('md.gold'), 'md-c-gold'),
+        label('CS', 'md-c-cs'), label(t('md.vision'), 'md-c-vision'), label(t('card.items'), 'md-c-items')];
+    return `<section class="md-team ${cls} ${win ? 'win' : 'loss'}">
+      <header class="md-head">
+        <b class="md-res">${esc(title)}</b>${side ? `<span class="md-side">${esc(side)}</span>` : ''}
+        <span class="md-score">${sum.k} / ${sum.d} / ${sum.a}</span>
+        ${obj ? `<span class="md-obj">${esc(obj)}</span>` : ''}
+        ${ctx.arena ? '' : `<span class="md-obj">${t('md.goldTotal', { n: num(sum.gold) })}</span>`}
+        ${bans ? `<span class="md-bans" title="${esc(t('md.bans'))}">${bans}</span>` : ''}
+      </header>
+      ${withLabels ? `<div class="md-row md-labels ${ctx.arena ? 'arena' : ''}">${labels.join('')}</div>` : ''}
+      ${ps.map(p => playerDetailHtml(p, ctx, sum.k)).join('')}
+    </section>`;
+  }
+
+  function playerDetailHtml(p, ctx, teamKills) {
+    const { st } = ctx;
+    const ch = champOf(st, p.champId);
+    const name = !p.gameName ? esc(ch.name)
+      : p.tagLine ? `<a href="${playerHref(p.gameName, p.tagLine)}" title="${esc(`${p.gameName}#${p.tagLine}`)}">${esc(p.gameName)}</a>` : esc(p.gameName);
+    const multi = p.multi ? `<span class="md-multi m${p.multi}">${t('md.multi' + p.multi)}</span>` : '';
+    // Podíl na zabitích týmu (v Areně nedává smysl – tam jen KDA)
+    const kp = ctx.arena ? '' : ` · ${t('md.kp', { p: pct0(teamKills ? Math.min(1, (p.k + p.a) / teamKills) : 0) })}`;
+    const items = p.items.map(id => `<img src="${st.itemIcon(id)}" alt="" title="${esc(st.itemName(id) || '')}" loading="lazy">`).join('');
+    const cells = [
+      `<a class="md-champ" href="${champHref(ch)}" title="${esc(ch.name)}"><img src="${ch.icon}" alt="" loading="lazy"><span>${p.level}</span></a>`,
+    ];
+    if (!ctx.arena) {
+      // Kouzla a runy (keystone, vedlejší strom) ve čtverci 2 × 2
+      const img = (x, c = '') => (x ? `<img class="${c}" src="${x.icon}" alt="" title="${esc(x.name)}" loading="lazy">` : '<i></i>');
+      const [s1, s2] = p.spells.map(id => st.spells.get(id));
+      cells.push(`<div class="md-icons">${img(s1)}${img(st.runes.get(p.keystone), 'rn')}${img(s2)}${img(st.styles.get(p.subStyle), 'rn')}</div>`);
+    }
+    cells.push(
+      `<div class="md-who"><b>${name}</b><small>${esc(ch.name)}${multi}</small></div>`,
+      `<div class="md-kda"><b>${p.k} / ${p.d} / ${p.a}</b><small${kp ? ` title="${esc(t('md.kpTip'))}"` : ''}>${nf2.format(kdaOf(p.k, p.d, p.a))}${kp}</small></div>`,
+      `<div class="md-dmg" title="${esc(t('md.dmgTip', { phys: num(p.phys), magic: num(p.magic), tru: num(p.trueDmg) }))}"><b>${num(p.dmg)}</b>
+        <span class="md-bar"><i style="width:${Math.min(100, p.dmg / ctx.maxDmg * 100).toFixed(1)}%"></i></span></div>`,
+      `<div class="md-c-taken" title="${esc(t('md.takenTip'))}">${num(p.taken)}</div>`,
+    );
+    if (ctx.arena) {
+      const augs = p.augments.map(id => ctx.augs?.get(id)).filter(Boolean)
+        .map(a => `<img class="r-${a.rarity}" src="${a.icon}" alt="" title="${esc(a.name)}" loading="lazy">`).join('');
+      cells.push(`<div class="md-augs">${augs}</div>`);
+    } else {
+      cells.push(
+        `<div class="md-c-gold">${num(p.gold)}</div>`,
+        `<div class="md-c-cs"><b>${p.cs}</b><small>${t('pl.perMin', { n: nf1.format(ctx.minutes ? p.cs / ctx.minutes : 0) })}</small></div>`,
+        `<div class="md-c-vision">${p.vision}</div>`,
+      );
+    }
+    cells.push(`<div class="md-c-items">${items}</div>`);
+    return `<div class="md-row ${ctx.arena ? 'arena' : ''} ${p.puuid && p.puuid === ctx.puuid ? 'me' : ''}">${cells.join('')}</div>`;
   }
 
   return {

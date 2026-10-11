@@ -640,6 +640,13 @@ const Desktop = (() => {
     return request({ type: 'lookup', gameName, tagLine });
   }
 
+  // Podrobnosti jednoho zápasu z historie (všichni hráči) – taky přes LoL klient
+  async function matchDetail(gameId) {
+    if (!host) return { ok: false, message: t('lookup.desktopOnly') };
+    if (!client.connected) return { ok: false, message: t('md.needClient') };
+    return request({ type: 'matchDetail', gameId: Number(gameId) });
+  }
+
   function overlayBuild({ st, champ, kit, role, build: b, f, q, augments, prism, dataPatch, tierPatch }) {
     if (!b || !b.matches) return null;
     const item = id => ({ id, name: st.itemName(id) || t('item.unknown', { id }), icon: st.itemIcon(id) });
@@ -801,7 +808,7 @@ const Desktop = (() => {
   }
 
   return {
-    init, importBarHtml, bindImportBar, lookupPlayer, sendSettings, phaseText,
+    init, importBarHtml, bindImportBar, lookupPlayer, matchDetail, sendSettings, phaseText,
     toggleOverlayDemo, togglePanelDemo,
     setAutostart: on => send({ type: 'setAutostart', enabled: !!on }),
     backupNow: () => send({ type: 'backupNow' }),

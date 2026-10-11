@@ -787,6 +787,26 @@ public sealed class MainForm : Form
                 }
                 break;
             }
+            case "matchDetail":
+            {
+                var id = msg["id"]?.GetValue<int>() ?? 0;
+                if (!lcu.Connected)
+                {
+                    PostToWeb(new { type = "result", id, ok = false, message = Loc.T("matchNeedClient", "Podrobnosti zápasu načítá LoL klient – musí běžet.") });
+                    break;
+                }
+                try
+                {
+                    var game = await lcu.GetGameAsync(msg["gameId"] is JsonValue g && g.TryGetValue<long>(out var gameId) ? gameId : 0);
+                    if (game == null) PostToWeb(new { type = "result", id, ok = false, message = Loc.T("matchFail", "Zápas se nepodařilo načíst.") });
+                    else PostToWeb(new { type = "result", id, ok = true, message = "", data = game });
+                }
+                catch (Exception ex)
+                {
+                    PostToWeb(new { type = "result", id, ok = false, message = Loc.T("clientError", "Chyba při komunikaci s klientem: {0}", ex.Message) });
+                }
+                break;
+            }
             case "overlayDemo":
                 // Ukázka mimo hru – overlay jde rovnou přetáhnout na místo
                 var demoBuild = msg["build"];
