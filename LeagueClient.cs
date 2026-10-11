@@ -328,6 +328,13 @@ sealed class LeagueClient : IDisposable
         });
     }
 
+    /// <summary>
+    /// Celý zápas z historie (všichni hráči, poškození, zlato, itemy, týmy) – pro rozkliknutý zápas v profilu.
+    /// Jen zápasy ze serveru, na kterém je klient přihlášený.
+    /// </summary>
+    public Task<JsonNode?> GetGameAsync(long gameId) =>
+        gameId > 0 ? GetAsync($"/lol-match-history/v1/games/{gameId}") : Task.FromResult<JsonNode?>(null);
+
     // ---------- Import ----------
 
     public async Task<(bool ok, string message)> ImportRunesAsync(JsonNode page)
