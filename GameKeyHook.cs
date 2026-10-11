@@ -5,18 +5,17 @@ namespace NotLoL;
 /// <summary>
 /// Zkratky, když má focus okno hry. LoL si běžné zkratky ostatních programů (RegisterHotKey) vypíná,
 /// proto během hry sledujeme klávesnici nízkoúrovňovým hookem – stejně jako push-to-talk v Discordu.
-/// Hook nic neblokuje ani nemění, jen pozná Ctrl+X, Ctrl+Shift+H a Ctrl+Shift+M.
+/// Hook nic neblokuje ani nemění, jen pozná zkratky z Hotkeys (výchozí Ctrl+X, Ctrl+Shift+H a Ctrl+Shift+M).
 /// </summary>
 sealed class GameKeyHook : IDisposable
 {
-    public const int TogglePanel = 3, ToggleOverlay = 1, MoveOverlay = 2;
-
     readonly HookProc proc;
     readonly HashSet<int> down = [];
     IntPtr hook;
 
     /// <summary>Kdy na zkratku reagovat (např. jen když je v popředí hra).</summary>
     public Func<bool>? Filter { get; set; }
+    /// <summary>Stisknutá zkratka (id z Hotkeys).</summary>
     public event Action<int>? Pressed;
 
     public GameKeyHook() => proc = Callback;
@@ -51,18 +50,15 @@ sealed class GameKeyHook : IDisposable
             {
                 down.Remove(vk);
             }
-            else if ((msg == WM_KEYDOWN || msg == WM_SYSKEYDOWN) && down.Add(vk) && (vk == VK_X || vk == VK_H || vk == VK_M))
+            else if ((msg == WM_KEYDOWN || msg == WM_SYSKEYDOWN) && down.Add(vk) && Hotkeys.All.Any(b => b.Vk == vk))
             {
                 bool ctrl = IsDown(VK_CONTROL, 0xA2, 0xA3);
                 bool shift = IsDown(VK_SHIFT, 0xA0, 0xA1);
                 bool alt = IsDown(VK_MENU, 0xA4, 0xA5);
-                int id = !ctrl || alt ? 0
-                    : vk == VK_X && !shift ? TogglePanel
-                    : vk == VK_H && shift ? ToggleOverlay
-                    : vk == VK_M && shift ? MoveOverlay
-                    : 0;
+                // Modifikátory musí sedět přesně (Ctrl+X není Ctrl+Shift+X)
+                var hit = Hotkeys.All.FirstOrDefault(b => b.Vk == vk && b.Ctrl == ctrl && b.Shift == shift && b.Alt == alt);
                 // Rychle vrátit – samotná akce proběhne až po návratu z hooku
-                if (id != 0 && (Filter?.Invoke() ?? true)) Pressed?.Invoke(id);
+                if (hit != null && (Filter?.Invoke() ?? true)) Pressed?.Invoke(hit.Id);
             }
         }
         return CallNextHookEx(hook, code, wParam, lParam);
@@ -73,7 +69,7 @@ sealed class GameKeyHook : IDisposable
 
     const int WH_KEYBOARD_LL = 13;
     const int WM_KEYDOWN = 0x100, WM_KEYUP = 0x101, WM_SYSKEYDOWN = 0x104, WM_SYSKEYUP = 0x105;
-    const int VK_SHIFT = 0x10, VK_CONTROL = 0x11, VK_MENU = 0x12, VK_H = 0x48, VK_M = 0x4D, VK_X = 0x58;
+    const int VK_SHIFT = 0x10, VK_CONTROL = 0x11, VK_MENU = 0x12;
 
     delegate IntPtr HookProc(int code, IntPtr wParam, IntPtr lParam);
 

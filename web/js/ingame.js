@@ -6,7 +6,7 @@
  *   {type:'live', live}   – živá data ze hry (hráči, KDA, CS, itemy, runy, úroveň) – chodí každou sekundu
  *   {type:'ranks', ranks} – hráči z LoL klienta { "Jméno#TAG": {ranked, solo, flex, level, privacy, history} | null };
  *                           history (posledních 20 zápasů) přichází až po rankách
- *   {type:'prefs', lang, accent} – jazyk a barva z nastavení hlavního okna
+ *   {type:'prefs', lang, accent, panelKey} – jazyk, barva a zkratka panelu z nastavení hlavního okna
  * Každá část se překresluje zvlášť a jen když se změní, takže scrollování neskáče nahoru.
  */
 const host = window.chrome?.webview;
@@ -29,7 +29,8 @@ const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': 
 const wrClass = wr => (wr >= 0.53 ? 'wr-great' : wr >= 0.51 ? 'wr-good' : wr >= 0.49 ? 'wr-mid' : wr >= 0.47 ? 'wr-low' : 'wr-bad');
 const placeClass = p => (p <= 3.6 ? 'wr-great' : p <= 4.1 ? 'wr-good' : p <= 4.6 ? 'wr-mid' : p <= 5 ? 'wr-low' : 'wr-bad');
 const clock = secs => `${Math.floor(secs / 60)}:${String(Math.floor(secs % 60)).padStart(2, '0')}`;
-const kbd = k => `<kbd>${k === 'Ctrl' ? t('kbd.ctrl') : k}</kbd>`;
+// Zkratka panelu z nastavení (popisek už v jazyce appky, např. "Strg+X")
+const keysHtml = label => label.split('+').map(k => `<kbd>${esc(k)}</kbd>`).join('+');
 
 // Barva zvýraznění (stejné úložiště jako hlavní okno)
 function setAccent(accent) {
@@ -44,6 +45,7 @@ host?.addEventListener('message', e => {
   else if (m.type === 'ranks') S.ranks = m.ranks || {};
   else if (m.type === 'prefs') {
     if (m.lang) I18N.set(m.lang);
+    if (m.panelKey) S.panelKey = m.panelKey;
     setAccent(m.accent);
     for (const k in last) delete last[k]; // jiný jazyk = překreslit vše
   }
@@ -98,7 +100,7 @@ function render() {
     <nav class="tabs">${tabs.map(([k, l]) => `<button class="${S.tab === k ? 'on' : ''}" data-tab="${k}">${l}</button>`).join('')}</nav>
     <span class="mode">${esc(S.info?.mode || '')}${S.info?.patch ? ` · ${esc(t('patch.n', { p: S.info.patch }))}` : ''}${S.info?.demo ? ` · <b class="demo">${t('ig.demo')}</b>` : ''}</span>
     <span class="time">${S.live ? clock(S.live.gameTime || 0) : ''}</span>
-    <span class="hint">${kbd('Ctrl')}+${kbd('X')} ${t('ig.close')}</span>
+    <span class="hint">${keysHtml(S.panelKey || `${t('kbd.ctrl')}+X`)} ${t('ig.close')}</span>
     <button class="close" data-close title="${esc(t('close'))}">×</button>`);
 
   document.getElementById('paneMatch').hidden = S.tab !== 'match';

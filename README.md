@@ -81,11 +81,13 @@ That's it – no account and no sign-up. If your PC is missing the .NET 10 Deskt
 
 ## ⚡ In-game shortcuts
 
-| Shortcut | What it does |
+| Default shortcut | What it does |
 | --- | --- |
 | <kbd>Ctrl</kbd> + <kbd>X</kbd> | In-game panel – all players, ranks, your build |
 | <kbd>Ctrl</kbd> + <kbd>Shift</kbd> + <kbd>H</kbd> | Hide / show the overlay |
 | <kbd>Ctrl</kbd> + <kbd>Shift</kbd> + <kbd>M</kbd> | Move the overlay with the mouse |
+
+Want different keys? In *Settings → In-game shortcuts*, click a shortcut and press a new one – any letter, number, F1–F11 or Num key together with <kbd>Ctrl</kbd> or <kbd>Alt</kbd> (and <kbd>Shift</kbd> if you like). NotLoL warns you when League of Legends already uses that combination, and the arrow next to a changed shortcut puts the default back.
 
 ## ❓ FAQ
 
@@ -110,7 +112,7 @@ Tier lists, builds, runes and matchups come from <a href="https://u.gg">u.gg</a>
 <details>
 <summary><b>The overlay doesn't show up in the game.</b></summary>
 <br>
-Switch the game to <b>Borderless</b> window mode – Windows doesn't draw other apps over a game in exclusive fullscreen. Also check that the overlay is turned on in NotLoL's settings, and press <kbd>Ctrl</kbd> + <kbd>Shift</kbd> + <kbd>H</kbd> in case you hid it.
+Switch the game to <b>Borderless</b> window mode – Windows doesn't draw other apps over a game in exclusive fullscreen. Also check that the overlay is turned on in NotLoL's settings, and press <kbd>Ctrl</kbd> + <kbd>Shift</kbd> + <kbd>H</kbd> (or the shortcut you set instead) in case you hid it.
 </details>
 
 <details>

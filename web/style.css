@@ -1358,10 +1358,24 @@ p.more-games { color: var(--muted); }
 .status-line .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--dim); flex: 0 0 auto; }
 .status-line.ok { color: var(--text); }
 .status-line.ok .dot { background: var(--wr-great); box-shadow: 0 0 0 3px rgba(62, 224, 160, .18); }
-.keys { display: grid; gap: 9px; }
-.key-row { display: flex; align-items: center; gap: 5px; }
-.key-row > span:last-child { margin-left: 10px; color: var(--muted); font-size: 13px; }
+/* Řádky sdílí sloupce mřížky, aby popisky začínaly pod sebou i u různě dlouhých zkratek */
+.keys { display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 7px 12px; }
+.key-row { display: contents; }
+.key-row > span { color: var(--muted); font-size: 13px; }
 .plus { color: var(--dim); font-size: 11px; font-weight: 700; }
+/* Zkratka jde přenastavit: klik na ni a stisk nové */
+.hk-btn { display: inline-flex; align-items: center; gap: 5px; min-height: 34px; padding: 4px 8px; background: var(--bg-2); border: 1px dashed transparent; border-radius: 9px; color: inherit; font: inherit; cursor: pointer; transition: border-color .15s, background .15s; }
+.hk-btn:hover { border-color: var(--line-2); }
+.hk-btn:focus-visible { outline: 2px solid var(--accent-2); outline-offset: 2px; }
+.hk-btn.hk-rec { border-color: var(--accent); background: rgba(var(--accent-rgb), .12); }
+.hk-press { font-size: 12px; font-weight: 700; color: var(--accent-2); animation: hk-blink 1.2s ease-in-out infinite; }
+@keyframes hk-blink { 50% { opacity: .45; } }
+.hk-reset { display: grid; place-items: center; width: 26px; height: 26px; padding: 0; background: none; border: 0; border-radius: 7px; color: var(--dim); cursor: pointer; }
+.hk-reset:hover { color: var(--text); background: var(--bg-2); }
+.hk-msg { display: flex; align-items: flex-start; gap: 7px; margin: 10px 0 0; font-size: 13px; }
+.hk-msg .ico { flex: 0 0 auto; margin-top: 1px; }
+.hk-msg.error { color: var(--wr-bad); }
+.hk-msg.warn { color: var(--t-s); }
 .btn-row { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 14px; }
 .backup-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; margin-top: 12px; }
 .backup-info { display: inline-flex; align-items: center; gap: 8px; font-size: 13px; color: var(--muted); }
