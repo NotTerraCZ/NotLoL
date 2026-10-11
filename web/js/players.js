@@ -210,10 +210,19 @@ const Players = (() => {
     }
     if (!mine) remember(data.gameName, data.tagLine);
     document.title = `${data.gameName}#${data.tagLine} – NotLoL`;
+    const P = {
+      req: id, d: data, st, mine, puuid: data.puuid,
+      games: (data.parsedGames || (data.games || []).map(parseGame).filter(Boolean)).sort((a, b) => b.created - a.created),
+      next: 20,       // odkud načíst další zápasy
+      details: new Map(), // id zápasu -> podrobnosti (všichni hráči) | null = nepodařilo se
+      detailError: '',
+    };
     box.innerHTML = (cachedAt ? `<div class="banner info">${icon('info', 18)}<p>${t('me.cached', { date: esc(fmtDate(cachedAt)) })}</p></div>` : '')
-      + profileHtml(data, st, mine);
+      + profileHtml(P);
     box.querySelector('[data-action="refresh-me"]')?.addEventListener('click', () => renderProfile(gameName, tagLine));
+    box.querySelector('[data-action="more-games"]')?.addEventListener('click', e => loadMoreGames(P, e.currentTarget));
     bindMatches(box, st, data.puuid);
+    loadProfileDetails(P);
   }
 
   // ---------- Profil ----------
@@ -248,6 +257,14 @@ const Players = (() => {
       cs: (s.totalMinionsKilled || 0) + (s.neutralMinionsKilled || 0),
       items,
       spells: [p.spell1Id, p.spell2Id],
+      // Pro statistiky profilu
+      mapId: g.mapId || 0,
+      dmg: s.totalDamageDealtToChampions || 0,
+      gold: s.goldEarned || 0,
+      vision: s.visionScore || 0,
+      multi: [s.tripleKills || 0, s.quadraKills || 0, s.pentaKills || 0],
+      firstBlood: !!s.firstBloodKill,
+      lane: p.timeline?.lane || '', role: p.timeline?.role || '',
     };
   }
 
@@ -281,68 +298,15 @@ const Players = (() => {
     </div>`;
   }
 
-  function profileHtml(d, st, mine) {
-    const games = (d.parsedGames || (d.games || []).map(parseGame).filter(Boolean)).sort((a, b) => b.created - a.created);
-    const counted = games.filter(g => !g.remake);
-    const wins = counted.filter(g => g.win).length;
-    const sum = counted.reduce((s, g) => ({ k: s.k + g.k, d: s.d + g.d, a: s.a + g.a }), { k: 0, d: 0, a: 0 });
-    const n = counted.length || 1;
-
-    // Nejhranější šampioni z posledních zápasů
-    const byChamp = new Map();
-    for (const g of counted) {
-      const c = byChamp.get(g.champId) || { id: g.champId, games: 0, wins: 0, k: 0, d: 0, a: 0 };
-      c.games++; c.wins += g.win ? 1 : 0; c.k += g.k; c.d += g.d; c.a += g.a;
-      byChamp.set(g.champId, c);
-    }
-    const top = [...byChamp.values()].sort((a, b) => b.games - a.games || b.wins - a.wins).slice(0, 5);
-    const main = top[0] ? champOf(st, top[0].id) : null;
-
-    const summary = counted.length ? `<div class="card">
-        <h2>${t('pl.lastN', { n: counted.length })}</h2>
-        <div class="sum">
-          <div class="sum-wr"><b class="${wrClass(wins / n)}">${pct(wins / n)}</b><small>${t('pl.wl', { w: wins, l: counted.length - wins })}</small></div>
-          <div class="sum-kda"><b>${nf1.format(sum.k / n)} / ${nf1.format(sum.d / n)} / ${nf1.format(sum.a / n)}</b>
-            <small>${nf2.format(kdaOf(sum.k, sum.d, sum.a))} KDA</small></div>
-        </div>
-        <div class="form-strip">${counted.slice(0, 20).reverse().map(g => `<i class="${g.win ? 'w' : 'l'}"></i>`).join('')}</div>
-        <h3>${t('pl.topChamps')}</h3>
-        ${top.map(c => {
-          const ch = champOf(st, c.id);
-          return `<a class="mu" href="${champHref(ch)}"><img src="${ch.icon}" alt="" loading="lazy">
-            <span class="mu-name">${esc(ch.name)}</span>
-            <span class="mu-wr ${wrClass(c.wins / c.games)}">${pct(c.wins / c.games)}</span>
-            <span class="mu-games">${t('games', { n: c.games })} · ${nf2.format(kdaOf(c.k, c.d, c.a))} KDA</span></a>`;
-        }).join('')}
-      </div>` : '';
-
-    const matches = games.length ? games.map(g => {
-      const ch = champOf(st, g.champId);
-      const cls = g.remake ? 'remake' : g.win ? 'win' : 'loss';
-      const result = g.remake ? t('pl.remake') : g.placement ? t('pl.place', { n: g.placement }) : g.win ? t('pl.win') : t('pl.loss');
-      const spells = g.spells.map(sid => st.spells.get(sid)).filter(Boolean)
-        .map(s => `<img src="${s.icon}" alt="" title="${esc(s.name)}">`).join('');
-      const items = g.items.map(iid => `<img src="${st.itemIcon(iid)}" alt="" title="${esc(st.itemName(iid) || '')}" loading="lazy">`).join('');
-      const perMin = g.duration ? g.cs / (g.duration / 60) : 0;
-      // Arena: místo CS umístění (1.–8.)
-      const cs = g.arena
-        ? (g.placement ? `<b class="place-badge p${g.placement <= 4 ? 'top' : 'low'}">#${g.placement}</b>` : '')
-        : `<b>${g.cs} CS</b><small>${t('pl.perMin', { n: nf1.format(perMin) })}</small>`;
-      // Se známým id jde zápas rozkliknout (podrobnosti se ukážou pod ním)
-      const open = g.id ? ` data-game="${g.id}" role="button" tabindex="0" aria-expanded="false" title="${esc(t('md.open'))}"` : '';
-      return `<div class="match-wrap"><div class="match ${cls}"${open}>
-        <div class="m-res"><b>${result}</b><small>${esc(queueName(g))}</small><small>${I18N.ago(g.created)} · ${mmss(g.duration)}</small></div>
-        <a href="${champHref(ch)}" class="m-champ"><img src="${ch.icon}" alt="${esc(ch.name)}" title="${esc(ch.name)}"></a>
-        <div class="m-spells">${spells}</div>
-        <div class="m-kda"><b>${g.k} / ${g.d} / ${g.a}</b><small>${nf2.format(kdaOf(g.k, g.d, g.a))} KDA</small></div>
-        <div class="m-cs">${cs}</div>
-        <div class="m-items">${items}</div>
-        ${g.id ? `<span class="m-more">${icon('chevron', 16)}</span>` : ''}
-      </div>${g.id ? '<div class="match-detail" hidden></div>' : ''}</div>`;
-    }).join('') : `<div class="state"><p>${d.privacy === 'PRIVATE' ? t('pl.private') : t('pl.noGames')}</p></div>`;
-
+  function profileHtml(P) {
+    const { d, st, mine, games } = P;
+    const main = topChamps(games)[0];
+    const splash = main ? champOf(st, main.id).splash : '';
     const q = d.solo?.tier ? d.solo : d.flex?.tier ? d.flex : null;
-    return `<header class="player-head${main ? ' has-splash' : ''}" style="--tc:${q ? RANK_COLORS[q.tier] : 'var(--accent)'};${main ? `--splash:url('${main.splash}')` : ''}">
+    // Starší zápasy klient (možná) pošle po stránkách – jen když je co načítat
+    const more = games.length >= 20 && d.puuid && Desktop.active
+      ? `<button type="button" class="btn ghost small more-games" data-action="more-games">${t('pr.more')}</button>` : '';
+    return `<header class="player-head${splash ? ' has-splash' : ''}" style="--tc:${q ? RANK_COLORS[q.tier] : 'var(--accent)'};${splash ? `--splash:url('${splash}')` : ''}">
         <span class="p-avatar"><img class="p-icon" src="${iconUrl(d.profileIconId)}" alt=""><span class="p-lvl">${d.level || ''}</span></span>
         <div class="p-name">
           ${mine ? `<span class="you-badge">${icon('user', 13)}${t('me.you')}</span>` : ''}
@@ -352,10 +316,309 @@ const Players = (() => {
         ${mine ? `<button class="btn ghost small" data-action="refresh-me">${icon('refresh', 15)}${t('me.refresh')}</button>` : ''}
       </header>
       <div class="rank-cards">${rankCard('Ranked Solo/Duo', d.solo)}${rankCard('Ranked Flex', d.flex)}</div>
+      <div class="profile-stats" id="profileStats">${statsCardsHtml(P)}</div>
       <div class="player-grid">
-        <div>${summary}</div>
-        <div class="card"><h2>${t('pl.matches')}</h2><div class="matches">${matches}</div></div>
+        <div class="player-side"><div id="profileSummary">${summaryHtml(P)}</div>${masteryHtml(P)}</div>
+        <div class="card"><h2>${t('pl.matches')} <small class="match-count" id="matchCount">${games.length}</small></h2>
+          <div class="matches" id="matchList">${games.length ? games.map(g => matchRowHtml(g, st)).join('')
+            : `<div class="state"><p>${d.privacy === 'PRIVATE' ? t('pl.private') : t('pl.noGames')}</p></div>`}</div>
+          ${more}</div>
       </div>`;
+  }
+
+  // Části, které se mění s podrobnostmi zápasů a s dalšími načtenými zápasy
+  function refreshProfile(P) {
+    if (P.req !== req) return;
+    const set = (id, html) => {
+      const el = document.getElementById(id);
+      if (el && el.innerHTML !== html) el.innerHTML = html;
+    };
+    set('profileStats', statsCardsHtml(P));
+    set('profileSummary', summaryHtml(P));
+    set('matchCount', String(P.games.length));
+  }
+
+  // Nejhranější šampioni ze zápasů (bez remaků)
+  function topChamps(games) {
+    const byChamp = new Map();
+    for (const g of games) {
+      if (g.remake) continue;
+      const c = byChamp.get(g.champId) || { id: g.champId, games: 0, wins: 0, k: 0, d: 0, a: 0 };
+      c.games++; c.wins += g.win ? 1 : 0; c.k += g.k; c.d += g.d; c.a += g.a;
+      byChamp.set(g.champId, c);
+    }
+    return [...byChamp.values()].sort((a, b) => b.games - a.games || b.wins - a.wins);
+  }
+
+  function summaryHtml({ games, st }) {
+    const counted = games.filter(g => !g.remake);
+    if (!counted.length) return '';
+    const wins = counted.filter(g => g.win).length;
+    const sum = counted.reduce((s, g) => ({ k: s.k + g.k, d: s.d + g.d, a: s.a + g.a }), { k: 0, d: 0, a: 0 });
+    const n = counted.length;
+    return `<div class="card">
+        <h2>${t('pl.lastN', { n })}</h2>
+        <div class="sum">
+          <div class="sum-wr"><b class="${wrClass(wins / n)}">${pct(wins / n)}</b><small>${t('pl.wl', { w: wins, l: n - wins })}</small></div>
+          <div class="sum-kda"><b>${nf1.format(sum.k / n)} / ${nf1.format(sum.d / n)} / ${nf1.format(sum.a / n)}</b>
+            <small>${nf2.format(kdaOf(sum.k, sum.d, sum.a))} KDA</small></div>
+        </div>
+        <div class="form-strip">${counted.slice(0, 20).reverse().map(g => `<i class="${g.win ? 'w' : 'l'}"></i>`).join('')}</div>
+        <h3>${t('pl.topChamps')}</h3>
+        ${topChamps(games).slice(0, 5).map(c => {
+          const ch = champOf(st, c.id);
+          return `<a class="mu" href="${champHref(ch)}"><img src="${ch.icon}" alt="" loading="lazy">
+            <span class="mu-name">${esc(ch.name)}</span>
+            <span class="mu-wr ${wrClass(c.wins / c.games)}">${pct(c.wins / c.games)}</span>
+            <span class="mu-games">${t('games', { n: c.games })} · ${nf2.format(kdaOf(c.k, c.d, c.a))} KDA</span></a>`;
+        }).join('')}
+      </div>`;
+  }
+
+  function matchRowHtml(g, st) {
+    const ch = champOf(st, g.champId);
+    const cls = g.remake ? 'remake' : g.win ? 'win' : 'loss';
+    const result = g.remake ? t('pl.remake') : g.placement ? t('pl.place', { n: g.placement }) : g.win ? t('pl.win') : t('pl.loss');
+    const spells = g.spells.map(sid => st.spells.get(sid)).filter(Boolean)
+      .map(s => `<img src="${s.icon}" alt="" title="${esc(s.name)}">`).join('');
+    const items = g.items.map(iid => `<img src="${st.itemIcon(iid)}" alt="" title="${esc(st.itemName(iid) || '')}" loading="lazy">`).join('');
+    const perMin = g.duration ? g.cs / (g.duration / 60) : 0;
+    // Arena: místo CS umístění (1.–8.)
+    const cs = g.arena
+      ? (g.placement ? `<b class="place-badge p${g.placement <= 4 ? 'top' : 'low'}">#${g.placement}</b>` : '')
+      : `<b>${g.cs} CS</b><small>${t('pl.perMin', { n: nf1.format(perMin) })}</small>`;
+    // Se známým id jde zápas rozkliknout (podrobnosti se ukážou pod ním)
+    const open = g.id ? ` data-game="${g.id}" role="button" tabindex="0" aria-expanded="false" title="${esc(t('md.open'))}"` : '';
+    return `<div class="match-wrap"><div class="match ${cls}"${open}>
+      <div class="m-res"><b>${result}</b><small>${esc(queueName(g))}</small><small>${I18N.ago(g.created)} · ${mmss(g.duration)}</small></div>
+      <a href="${champHref(ch)}" class="m-champ"><img src="${ch.icon}" alt="${esc(ch.name)}" title="${esc(ch.name)}"></a>
+      <div class="m-spells">${spells}</div>
+      <div class="m-kda"><b>${g.k} / ${g.d} / ${g.a}</b><small>${nf2.format(kdaOf(g.k, g.d, g.a))} KDA</small></div>
+      <div class="m-cs">${cs}</div>
+      <div class="m-items">${items}</div>
+      ${g.id ? `<span class="m-more">${icon('chevron', 16)}</span>` : ''}
+    </div>${g.id ? '<div class="match-detail" hidden></div>' : ''}</div>`;
+  }
+
+  // ---------- Statistiky profilu ----------
+
+  // Summoner's Rift (normály, ranked, Swiftplay, Clash) – jen tam mají role smysl
+  const SR_QUEUES = new Set([400, 420, 430, 440, 480, 490, 700, 720]);
+  const isRift = g => g.mapId === 11 || SR_QUEUES.has(g.queueId);
+  // Support itemy (úkol podpory) – podle nich se pozná support i bez údaje o lajně
+  const SUPPORT_ITEMS = new Set([3865, 3866, 3867, 3869, 3870, 3871, 3876, 3877]);
+  const SMITE = 11;
+
+  // Role v zápase: Smite = jungle, support item = support, jinak podle lajny, kterou poslal klient
+  function roleOf(g) {
+    if (g.spells?.includes(SMITE)) return 'jungle';
+    if (g.items?.some(id => SUPPORT_ITEMS.has(id))) return 'supp';
+    const lane = String(g.lane || '').toUpperCase(), role = String(g.role || '').toUpperCase();
+    if (lane === 'TOP') return 'top';
+    if (lane === 'JUNGLE') return 'jungle';
+    if (lane === 'MIDDLE' || lane === 'MID') return 'mid';
+    if (lane === 'BOTTOM' || lane === 'BOT') return role.includes('SUPPORT') ? 'supp' : 'adc';
+    return null;
+  }
+
+  // Hodiny a minuty ("2 h 15 min")
+  const hm = secs => t('pr.hm', { h: Math.floor(secs / 3600), m: Math.floor((secs % 3600) / 60) });
+
+  function statsCardsHtml(P) {
+    const games = P.games.filter(g => !g.remake);
+    if (!games.length) return '';
+    const sub = `<p class="hint">${t('pl.lastN', { n: games.length })}</p>`;
+    return [rolesCard(games), modesCard(games), partnersCard(P), averagesCard(P, games)]
+      .map(([title, body]) => `<article class="card pstat"><h2>${title}</h2>${sub}${body}</article>`).join('');
+  }
+
+  // Řádek se sloupcem: popisek, podíl her (proužek) a čísla
+  const barRow = (label, share, right, title = '') => `<div class="pbar-row"${title ? ` title="${esc(title)}"` : ''}>
+      <span class="pbar-label">${label}</span>
+      <span class="pbar"><i style="width:${Math.max(3, share * 100).toFixed(1)}%"></i></span>
+      <span class="pbar-num">${right}</span>
+    </div>`;
+
+  function rolesCard(games) {
+    const rift = games.filter(isRift);
+    const roles = API.ROLES.map(r => {
+      const list = rift.filter(g => roleOf(g) === r.key);
+      return { r, games: list.length, wins: list.filter(g => g.win).length };
+    }).filter(x => x.games).sort((a, b) => b.games - a.games);
+    const body = roles.length ? roles.map(({ r, games: n, wins }) => barRow(
+      `<img src="${API.roleIcon(r.icon)}" alt="" onerror="this.remove()">${esc(r.label)}`, n / rift.length,
+      `${n}× · <b class="${wrClass(wins / n)}">${pct0(wins / n)}</b>`, t('pr.roleTip', { games: t('games', { n }), wl: t('pl.wl', { w: wins, l: n - wins }) }),
+    )).join('') : `<p class="muted">${t('pr.rolesNone')}</p>`;
+    return [t('pr.roles'), body];
+  }
+
+  function modesCard(games) {
+    const modes = new Map();
+    for (const g of games) {
+      const name = queueName(g);
+      const m = modes.get(name) || { name, games: 0, wins: 0, places: [], secs: 0 };
+      m.games++; m.wins += g.win ? 1 : 0; m.secs += g.duration || 0;
+      if (g.arena && g.placement) m.places.push(g.placement);
+      modes.set(name, m);
+    }
+    const body = [...modes.values()].sort((a, b) => b.games - a.games).map(m => {
+      // Arena: průměrné umístění místo win rate
+      const stat = m.places.length
+        ? `<b>${t('place.short', { p: nf1.format(m.places.reduce((a, b) => a + b, 0) / m.places.length) })}</b>`
+        : `<b class="${wrClass(m.wins / m.games)}">${pct0(m.wins / m.games)}</b>`;
+      return barRow(esc(m.name), m.games / games.length, `${m.games}× · ${stat}`,
+        t('pr.modeTip', { games: t('games', { n: m.games }), wl: t('pl.wl', { w: m.wins, l: m.games - m.wins }), time: hm(m.secs) }));
+    }).join('');
+    return [t('pr.modes'), body];
+  }
+
+  // Spoluhráči ze stejného týmu (v Areně ze stejné dvojice), se kterými hrál aspoň dvakrát
+  function partnersOf(P) {
+    const map = new Map();
+    for (const g of P.games) {
+      const det = g.remake ? null : P.details.get(String(g.id));
+      const me = det?.players.find(p => p.puuid && p.puuid === P.puuid);
+      if (!me) continue;
+      for (const m of det.players) {
+        if (m === me || !m.puuid || (det.arena ? m.subteam !== me.subteam : m.team !== me.team)) continue;
+        const e = map.get(m.puuid) || { gameName: m.gameName, tagLine: m.tagLine, icon: m.icon, games: 0, wins: 0, last: 0 };
+        e.games++;
+        e.wins += me.win ? 1 : 0;
+        e.last = Math.max(e.last, g.created);
+        map.set(m.puuid, e);
+      }
+    }
+    return [...map.values()].filter(e => e.games >= 2).sort((a, b) => b.games - a.games || b.wins - a.wins).slice(0, 6);
+  }
+
+  // Zápasy, u kterých se podrobnosti ještě načítají
+  const withId = P => P.games.filter(g => g.id && !g.remake);
+  const detailsPending = P => withId(P).some(g => !P.details.has(String(g.id)));
+
+  function partnersCard(P) {
+    const total = withId(P).length;
+    const done = withId(P).filter(g => P.details.has(String(g.id))).length;
+    const loaded = withId(P).filter(g => P.details.get(String(g.id))).length;
+    const list = partnersOf(P);
+    const loading = done < total
+      ? `<p class="hint loading-line"><span class="spinner small"></span>${t('pr.partnersLoading', { done, total })}</p>` : '';
+    let body = list.map(e => {
+      const name = e.tagLine ? `<a class="mu-name" href="${playerHref(e.gameName, e.tagLine)}" title="${esc(`${e.gameName}#${e.tagLine}`)}">${esc(e.gameName)}</a>`
+        : `<span class="mu-name">${esc(e.gameName || '?')}</span>`;
+      return `<div class="mu"><img src="${iconUrl(e.icon)}" alt="" loading="lazy">${name}
+        <span class="mu-wr ${wrClass(e.wins / e.games)}">${pct0(e.wins / e.games)}</span>
+        <span class="mu-games">${t('pr.together', { games: t('games', { n: e.games }) })} · ${I18N.ago(e.last)}</span></div>`;
+    }).join('');
+    // Nic se nenačetlo (třeba neběží LoL klient) – řekni proč
+    if (!body && !loading) body = `<p class="muted">${!loaded && P.detailError ? esc(P.detailError) : t('pr.partnersNone')}</p>`;
+    return [t('pr.partners'), body + loading];
+  }
+
+  function averagesCard(P, games) {
+    // Za minutu: bez Areny (jiný typ hry) a jen zápasy s načtenými čísly
+    const base = games.filter(g => !g.arena && g.duration && g.dmg != null);
+    const mins = base.reduce((s, g) => s + g.duration / 60, 0);
+    const per = key => (mins ? base.reduce((s, g) => s + (g[key] || 0), 0) / mins : 0);
+    const k = games.reduce((s, g) => s + g.k, 0), d = games.reduce((s, g) => s + g.d, 0), a = games.reduce((s, g) => s + g.a, 0);
+    const multi = games.reduce((s, g) => (g.multi || [0, 0, 0]).map((x, i) => s[i] + x), [0, 0, 0]);
+    // Z podrobností zápasů: podíl na zabitích a na poškození týmu
+    let kp = 0, share = 0, n = 0;
+    for (const g of base) {
+      const det = P.details.get(String(g.id));
+      const me = det?.players.find(p => p.puuid && p.puuid === P.puuid);
+      if (!me) continue;
+      const team = det.players.filter(p => p.team === me.team);
+      const kills = team.reduce((s, p) => s + p.k, 0), dmg = team.reduce((s, p) => s + p.dmg, 0);
+      if (kills) kp += Math.min(1, (me.k + me.a) / kills);
+      if (dmg) share += me.dmg / dmg;
+      n++;
+    }
+    const tile = (label, value, title = '') => `<div class="ptile"${title ? ` title="${esc(title)}"` : ''}><b>${value}</b><small>${label}</small></div>`;
+    const pending = `<span class="muted">${detailsPending(P) ? '…' : '—'}</span>`;
+    const tiles = [
+      tile(t('pr.kda'), nf2.format(kdaOf(k, d, a)), `${nf1.format(k / games.length)} / ${nf1.format(d / games.length)} / ${nf1.format(a / games.length)}`),
+      mins ? tile(t('pr.dmgMin'), num(per('dmg'))) : '',
+      mins ? tile(t('pr.goldMin'), num(per('gold'))) : '',
+      mins ? tile(t('pr.csMin'), nf1.format(per('cs'))) : '',
+      mins ? tile(t('pr.visionMin'), nf2.format(per('vision'))) : '',
+      base.length ? tile(t('pr.kp'), n ? pct0(kp / n) : pending) : '',
+      base.length ? tile(t('pr.dmgShare'), n ? pct0(share / n) : pending) : '',
+      tile(t('pr.avgTime'), mmss(Math.round(games.reduce((s, g) => s + g.duration, 0) / games.length))),
+      tile(t('pr.playtime'), hm(P.games.reduce((s, g) => s + (g.duration || 0), 0))),
+      tile(t('pr.multi'), multi.some(Boolean) ? [[multi[0], 'T'], [multi[1], 'Q'], [multi[2], 'P']].filter(([x]) => x).map(([x, l]) => `${x}× ${l}`).join(' · ') : '0',
+        `${t('md.multi3')} ${multi[0]} · ${t('md.multi4')} ${multi[1]} · ${t('md.multi5')} ${multi[2]}`),
+      tile('First blood', games.filter(g => g.firstBlood).length),
+    ];
+    return [t('pr.stats'), `<div class="ptiles">${tiles.join('')}</div>`];
+  }
+
+  function masteryHtml({ d, st }) {
+    const list = (d.mastery || []).slice(0, 6);
+    if (!list.length) return '';
+    const fmt = new Intl.NumberFormat(I18N.intl, { notation: 'compact', maximumFractionDigits: 1 });
+    return `<div class="card"><h2>${t('pr.mastery')}</h2>${list.map(m => {
+      const ch = champOf(st, m.champ);
+      return `<a class="mu" href="${champHref(ch)}"><img src="${ch.icon}" alt="" loading="lazy">
+        <span class="mu-name">${esc(ch.name)} <span class="mlvl" title="${esc(t('pr.levelTip', { n: m.level }))}">${m.level}</span></span>
+        <span class="mu-wr">${t('pr.points', { n: fmt.format(m.points) })}</span>
+        <span class="mu-games">${m.last ? t('pr.lastPlayed', { ago: I18N.ago(m.last) }) : ''}</span></a>`;
+    }).join('')}</div>`;
+  }
+
+  // ---------- Načítání podrobností a dalších zápasů ----------
+
+  // Podrobnosti všech zápasů (spoluhráči, KP, podíl na poškození) – po třech, výsledky se ukazují průběžně
+  async function loadProfileDetails(P) {
+    const todo = withId(P).filter(g => !P.details.has(String(g.id)));
+    if (!todo.length || P.loadingDetails) return;
+    P.loadingDetails = true;
+    let timer = 0;
+    const later = () => { if (!timer) timer = setTimeout(() => { timer = 0; refreshProfile(P); }, 150); };
+    let i = 0;
+    await Promise.all(Array.from({ length: 3 }, async () => {
+      while (i < todo.length && P.req === req) {
+        const g = todo[i++];
+        const r = await loadDetail(String(g.id));
+        let det = null;
+        try { if (r.ok && r.data) det = parseDetail(r.data); } catch { /* nečekaná data */ }
+        if (!det) P.detailError = r.message || t('md.fail');
+        P.details.set(String(g.id), det);
+        later();
+      }
+    }));
+    P.loadingDetails = false;
+    refreshProfile(P);
+    // Mezitím mohly přibýt další zápasy
+    if (P.req === req && detailsPending(P)) loadProfileDetails(P);
+  }
+
+  async function loadMoreGames(P, btn) {
+    btn.disabled = true;
+    const label = btn.textContent;
+    btn.innerHTML = `<span class="spinner small"></span>${esc(t('loading'))}`;
+    const r = await Desktop.matchHistory(P.puuid, P.next);
+    if (P.req !== req) return;
+    if (!r.ok) {
+      btn.disabled = false;
+      btn.textContent = label;
+      toast(r.message || t('md.fail'), false);
+      return;
+    }
+    // Klient může stránkování ignorovat a poslat znovu stejné zápasy – ty přeskočíme
+    const known = new Set(P.games.map(g => g.id));
+    const fresh = (r.data || []).map(parseGame).filter(g => g && !known.has(g.id)).sort((a, b) => b.created - a.created);
+    P.next += 20;
+    if (!fresh.length) {
+      btn.replaceWith(Object.assign(document.createElement('p'), { className: 'hint more-games', textContent: t('pr.noMore') }));
+      return;
+    }
+    P.games.push(...fresh);
+    P.games.sort((a, b) => b.created - a.created);
+    document.getElementById('matchList')?.insertAdjacentHTML('beforeend', fresh.map(g => matchRowHtml(g, P.st)).join(''));
+    btn.disabled = false;
+    btn.textContent = label;
+    refreshProfile(P);
+    loadProfileDetails(P);
   }
 
   // ---------- Podrobnosti zápasu (rozkliknutý zápas) ----------
@@ -420,6 +683,7 @@ const Players = (() => {
         puuid: id.puuid || '',
         gameName: id.gameName || id.summonerName || '',
         tagLine: id.tagLine || '',
+        icon: id.profileIcon || 0,
         champId: p.championId,
         team: p.teamId,
         spells: [p.spell1Id, p.spell2Id],
