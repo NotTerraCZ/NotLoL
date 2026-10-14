@@ -7,7 +7,7 @@ const view = $('#view');
 
 const PREFS_KEY = 'notlol.prefs.v1';
 const PREF_FIELDS = ['region', 'rank', 'queue', 'role', 'showAll', 'layout', 'sortKey', 'sortDir',
-  'autoOpen', 'autoImport', 'overlay', 'cardLabels', 'accent', 'motion', 'hotkeys'];
+  'autoOpen', 'autoImport', 'overlay', 'cardLabels', 'accent', 'motion', 'hotkeys', 'look'];
 const MIN_PICK = 0.005;
 
 const state = Object.assign(
@@ -15,10 +15,11 @@ const state = Object.assign(
     showAll: false, layout: 'table', sortKey: 'score', sortDir: -1,
     // Desktop: napojení na LoL klient
     autoOpen: true, autoImport: false, overlay: true, cardLabels: true, hotkeys: {},
-    // Vzhled
-    accent: 'blue', motion: true },
+    // Vzhled (look = verze vzhledu, kvůli jednorázovému přechodu na nový)
+    accent: 'red', motion: true, look: 2 },
   loadPrefs(),
 );
+savePrefs(); // uloží případný přechod na nový vzhled (čte ho i herní panel)
 let patches = [];     // patche v nabídce
 let allPatches = [];  // všechny patche (pro dohledání starších dat, např. Arena mimo rotaci)
 let tierFilter = '';
@@ -31,6 +32,11 @@ let freshPatch = null; // { patch, games } – nejnovější patch, který má z
 function loadPrefs() {
   try {
     const p = JSON.parse(localStorage.getItem(PREFS_KEY)) || {};
+    // Nový vzhled (1.6): kdo měl původní výchozí modrou, dostane novou výchozí červenou
+    if (!p.look) {
+      if (p.accent === 'blue') p.accent = 'red';
+      p.look = 2;
+    }
     return Object.fromEntries(PREF_FIELDS.filter(k => k in p).map(k => [k, p[k]]));
   } catch {
     return {};
@@ -44,7 +50,7 @@ function savePrefs() {
 
 // Barva zvýraznění a animace (Nastavení → Vzhled)
 function applyLook() {
-  document.documentElement.dataset.accent = state.accent || 'blue';
+  document.documentElement.dataset.accent = state.accent || 'red';
   document.documentElement.dataset.motion = state.motion === false ? 'off' : 'on';
 }
 applyLook();

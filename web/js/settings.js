@@ -5,7 +5,7 @@
  * propojení s LoL klientem (overlay, import, zkratky), spouštění s Windows, záloha dat a účet.
  */
 const Settings = (() => {
-  const ACCENTS = ['blue', 'hextech', 'violet', 'gold', 'rose', 'emerald'];
+  const ACCENTS = ['red', 'orange', 'rose', 'violet', 'blue', 'hextech', 'emerald', 'gold'];
 
   const toggle = (key, label, on, hint = '', id = '') => `<label class="switch-row">
       <span class="switch"><input type="checkbox" ${id ? `id="${id}"` : `data-setting="${key}"`} ${on ? 'checked' : ''}><i></i></span>

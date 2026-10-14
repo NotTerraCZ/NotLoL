@@ -7,7 +7,7 @@
   width: 100%;
   background: var(--bg-2, #0f1320);
   border: 1px solid var(--line, #252d44);
-  border-radius: 10px;
+  border-radius: 4px;
   padding: 7px 11px 7px 32px;
   color: var(--text, #e9ecf5);
   font: inherit;
@@ -15,8 +15,8 @@
   transition: border-color .15s;
 }
 .cards-search:focus { border-color: var(--accent, #6c8cff); }
-.cards-sort { display: inline-flex; background: var(--bg-2, #0f1320); border: 1px solid var(--line, #252d44); border-radius: 9px; padding: 2px; }
-.cards-sort button { background: none; border: 0; color: var(--muted, #8a92ad); font-family: inherit; font-size: 12px; font-weight: 600; padding: 6px 10px; border-radius: 7px; cursor: pointer; }
+.cards-sort { display: inline-flex; background: var(--bg-2, #0f1320); border: 1px solid var(--line, #252d44); border-radius: 4px; padding: 2px; }
+.cards-sort button { background: none; border: 0; color: var(--muted, #8a92ad); font-family: inherit; font-size: 12px; font-weight: 600; padding: 6px 10px; border-radius: 4px; cursor: pointer; }
 .cards-sort button.on { background: var(--panel-2, #1a2032); color: var(--text, #e9ecf5); }
 .cards-hint { font-size: 12px; color: var(--muted, #8a92ad); }
 .cards-empty { color: var(--muted, #8a92ad); margin: 8px 0 0; }
@@ -34,7 +34,7 @@
   gap: 8px;
   align-items: center;
   padding: 4px 6px;
-  border-radius: 9px;
+  border-radius: 4px;
   background: var(--bg-2, #0f1320);
   border: 1px solid transparent;
   transition: border-color .12s, background .12s;

@@ -12,7 +12,7 @@ namespace NotLoL;
 /// </summary>
 sealed class InGameForm : Form
 {
-    static readonly Color Bg = Color.FromArgb(10, 13, 22);
+    static readonly Color Bg = Color.FromArgb(13, 11, 18);
     static readonly JsonSerializerOptions Json = new() { PropertyNamingPolicy = JsonNamingPolicy.CamelCase };
 
     readonly WebView2 web = new() { Dock = DockStyle.Fill, DefaultBackgroundColor = Bg };
@@ -52,7 +52,7 @@ sealed class InGameForm : Form
     protected override void OnHandleCreated(EventArgs e)
     {
         base.OnHandleCreated(e);
-        int round = 2; // DWMWCP_ROUND
+        int round = 3; // DWMWCP_ROUNDSMALL – ostřejší rohy jako v rozhraní
         DwmSetWindowAttribute(Handle, 33, ref round, sizeof(int));
     }
 

@@ -9,9 +9,9 @@ namespace NotLoL;
 /// </summary>
 sealed class AugmentLabelForm : Form
 {
-    static readonly Color Bg = Color.FromArgb(11, 15, 26);
-    static readonly Color Fg = Color.FromArgb(237, 240, 247);
-    static readonly Color Muted = Color.FromArgb(150, 160, 186);
+    static readonly Color Bg = Color.FromArgb(16, 13, 21);
+    static readonly Color Fg = Color.FromArgb(242, 240, 247);
+    static readonly Color Muted = Color.FromArgb(155, 147, 172);
     static readonly Color Gold = Color.FromArgb(240, 200, 100);
     static readonly Dictionary<string, Color> TierColors = new()
     {
@@ -55,7 +55,7 @@ sealed class AugmentLabelForm : Form
     protected override void OnHandleCreated(EventArgs e)
     {
         base.OnHandleCreated(e);
-        int round = 2; // DWMWCP_ROUND
+        int round = 3; // DWMWCP_ROUNDSMALL – ostřejší rohy jako v rozhraní
         DwmSetWindowAttribute(Handle, 33, ref round, sizeof(int));
     }
 
@@ -77,7 +77,7 @@ sealed class AugmentLabelForm : Form
         g.SmoothingMode = SmoothingMode.AntiAlias;
         g.TextRenderingHint = System.Drawing.Text.TextRenderingHint.ClearTypeGridFit;
         float W = ClientSize.Width, H = ClientSize.Height;
-        var tc = TierColors.GetValueOrDefault(cls, Color.FromArgb(93, 101, 130));
+        var tc = TierColors.GetValueOrDefault(cls, Color.FromArgb(104, 96, 121));
 
         // Rámeček: nejlepší karta zlatě, ostatní barvou tieru
         using (var pen = new Pen(best ? Gold : Color.FromArgb(170, tc), best ? Math.Max(2f, H / 22f) : Math.Max(1.5f, H / 40f)))
@@ -86,12 +86,12 @@ sealed class AugmentLabelForm : Form
         // Odznak s tierem
         float pad = H * 0.14f, side = H - 2 * pad;
         var badge = new RectangleF(pad, pad, side * 1.08f, side);
-        using (var path = Rounded(badge, side * 0.22f))
+        using (var path = Chamfer(badge, side * 0.24f))
         using (var brush = new LinearGradientBrush(badge, Lighter(tc), tc, 60f))
             g.FillPath(brush, path);
         using (var fTier = new Font("Segoe UI", Math.Max(8f, side * (tier.Length > 1 ? 0.38f : 0.46f)), FontStyle.Bold, GraphicsUnit.Pixel))
         using (var sf = new StringFormat { Alignment = StringAlignment.Center, LineAlignment = StringAlignment.Center })
-        using (var tb = new SolidBrush(Color.FromArgb(10, 13, 22)))
+        using (var tb = new SolidBrush(Color.FromArgb(13, 11, 18)))
             g.DrawString(tier.Length > 0 ? tier : "–", fTier, tb, badge, sf);
 
         // Texty vpravo od odznaku
@@ -117,15 +117,15 @@ sealed class AugmentLabelForm : Form
 
     static Color Lighter(Color c) => Color.FromArgb(c.A, Math.Min(255, c.R + 40), Math.Min(255, c.G + 40), Math.Min(255, c.B + 40));
 
-    static GraphicsPath Rounded(RectangleF r, float radius)
+    // Zkosené rohy (vlevo nahoře a vpravo dole) – stejný tvar jako tier odznaky v rozhraní
+    static GraphicsPath Chamfer(RectangleF r, float c)
     {
         var p = new GraphicsPath();
-        float d = radius * 2;
-        p.AddArc(r.X, r.Y, d, d, 180, 90);
-        p.AddArc(r.Right - d, r.Y, d, d, 270, 90);
-        p.AddArc(r.Right - d, r.Bottom - d, d, d, 0, 90);
-        p.AddArc(r.X, r.Bottom - d, d, d, 90, 90);
-        p.CloseFigure();
+        p.AddPolygon(new[]
+        {
+            new PointF(r.X + c, r.Y), new PointF(r.Right, r.Y), new PointF(r.Right, r.Bottom - c),
+            new PointF(r.Right - c, r.Bottom), new PointF(r.X, r.Bottom), new PointF(r.X, r.Y + c),
+        });
         return p;
     }
 

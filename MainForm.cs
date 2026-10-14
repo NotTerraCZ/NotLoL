@@ -13,7 +13,7 @@ namespace NotLoL;
 /// </summary>
 public sealed class MainForm : Form
 {
-    static readonly Color Background = Color.FromArgb(10, 13, 22);
+    static readonly Color Background = Color.FromArgb(13, 11, 18);
     internal static readonly string DataDir = Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "NotLoL");
     static readonly string WindowFile = Path.Combine(DataDir, "window.json");
@@ -69,7 +69,7 @@ public sealed class MainForm : Form
 
     // Jazyk a barva z Nastavení (posílá se i hernímu panelu)
     string uiLang = "cs";
-    string uiAccent = "blue";
+    string uiAccent = "red";
 
     // Přihlášený účet v LoL klientovi (profil vpravo nahoře)
     JsonObject? me;
@@ -246,6 +246,7 @@ public sealed class MainForm : Form
             settings.Save();
         }
         LabelTray();
+        overlay?.SetAccent(uiAccent);
         overlay?.Invalidate();
         panel?.Post(new { type = "prefs", lang = uiLang, accent = uiAccent, panelKey = Hotkeys.Get(Hotkeys.Panel).Label });
     }
@@ -814,6 +815,7 @@ public sealed class MainForm : Form
             case "overlayBuild":
                 SetAugmentData(msg["augScan"]);
                 overlay ??= new OverlayForm();
+                overlay.SetAccent(uiAccent);
                 overlay.SetBuild(msg["build"]);
                 if (game != null) overlay.SetLive(game);
                 UpdateOverlay();
@@ -911,6 +913,7 @@ public sealed class MainForm : Form
                 var demoBuild = msg["build"];
                 overlayDemo = demoBuild != null;
                 overlay ??= new OverlayForm();
+                overlay.SetAccent(uiAccent);
                 if (overlayDemo)
                 {
                     overlay.SetBuild(demoBuild);
