@@ -72,9 +72,62 @@ sealed class DataCache
         url.StartsWith("https://lol-api-champion.op.gg/", StringComparison.OrdinalIgnoreCase)
         || (url.EndsWith(".json", StringComparison.OrdinalIgnoreCase) && !url.StartsWith(WebAssets.Origin, StringComparison.OrdinalIgnoreCase));
 
+    // Servery, jejichž data appka zálohuje (stejné jako Filters) – rozhraní nemůže nechat stáhnout cokoli jiného
+    static readonly string[] Hosts =
+    [
+        "https://stats2.u.gg/", "https://static.bigbrain.gg/", "https://ddragon.leagueoflegends.com/",
+        "https://raw.communitydragon.org/", "https://lol-api-champion.op.gg/",
+    ];
+    static bool IsBackedUp(string url) =>
+        IsData(url) && Hosts.Any(h => url.StartsWith(h, StringComparison.OrdinalIgnoreCase));
+
+    /// <summary>
+    /// Záloha bez rozhraní: stáhne adresy do zálohy, ale nic z nich nenačítá do paměti
+    /// (nezměněná data jen potvrdí dotazem "změnilo se to?"). Vrátí stav každé adresy (200 = je v záloze).
+    /// </summary>
+    public async Task<int[]> WarmAsync(IReadOnlyList<string> urls)
+    {
+        var result = new int[urls.Count];
+        using var gate = new SemaphoreSlim(4); // pár souběžných stahování, ať se servery nezahltí
+        await Task.WhenAll(urls.Select(async (url, i) =>
+        {
+            if (!IsBackedUp(url)) return; // 0 = tohle se nezálohuje
+            await gate.WaitAsync();
+            try { result[i] = (await GetAsync(url, needBody: false)).Status; }
+            catch { result[i] = 503; }
+            finally { gate.Release(); }
+        }));
+        return result;
+    }
+
+    /// <summary>Smaže zálohy, které se dlouho nepoužily (data starých patchů), ať složka neroste donekonečna.</summary>
+    public static void Prune(TimeSpan maxAge)
+    {
+        try
+        {
+            var limit = DateTime.UtcNow - maxAge;
+            foreach (var meta in new DirectoryInfo(Dir).GetFiles("*.meta.json"))
+            {
+                // Meta se přepíše při každém úspěšném stažení i potvrzení "nezměněno"
+                if (meta.LastWriteTimeUtc > limit) continue;
+                var body = Path.Combine(Dir, meta.Name[..^".meta.json".Length] + ".gz");
+                try
+                {
+                    File.Delete(body);
+                    meta.Delete();
+                }
+                catch { /* soubor se zrovna používá – příště */ }
+            }
+            foreach (var tmp in new DirectoryInfo(Dir).GetFiles("*.tmp"))
+                if (tmp.LastWriteTimeUtc < limit) tmp.Delete();
+        }
+        catch { /* záloha je jen bonus */ }
+    }
+
     public sealed record Result(int Status, byte[]? Body, string ContentType, DateTime? OfflineSavedAt);
 
-    public async Task<Result> GetAsync(string url)
+    /// <summary>needBody = false: jen uložit do zálohy (stav bez dat; když server nejde, vrátí jeho chybu).</summary>
+    public async Task<Result> GetAsync(string url, bool needBody = true)
     {
         var meta = ReadMeta(url);
         try
@@ -94,6 +147,11 @@ sealed class DataCache
 
             if (r.StatusCode == HttpStatusCode.NotModified && meta != null)
             {
+                if (!needBody)
+                {
+                    WriteMeta(url, meta with { SavedAt = DateTime.Now });
+                    return new Result(200, null, meta.ContentType, null);
+                }
                 var cached = ReadBody(url);
                 if (cached != null)
                 {
@@ -107,8 +165,9 @@ sealed class DataCache
                 var type = r.Content.Headers.ContentType?.ToString() ?? "application/json";
                 Save(url, body, new Meta(url, DateTime.Now, r.Headers.ETag?.ToString(),
                     r.Content.Headers.LastModified?.ToString("R"), type));
-                return new Result(200, body, type, null);
+                return new Result(200, needBody ? body : null, type, null);
             }
+            if (!needBody) return new Result((int)r.StatusCode, null, "text/plain", null);
             // Server odpověděl chybou: pokud máme zálohu, použij ji (soubor dřív existoval)
             var fallback = meta != null ? ReadBody(url) : null;
             if (fallback != null) return new Result(200, fallback, meta!.ContentType, meta.SavedAt);
@@ -117,6 +176,7 @@ sealed class DataCache
         catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or IOException)
         {
             // Bez spojení nebo vypršel čas – vrať zálohu, pokud je
+            if (!needBody) return new Result(503, null, "text/plain", null);
             var fallback = meta != null ? ReadBody(url) : null;
             if (fallback != null) return new Result(200, fallback, meta!.ContentType, meta.SavedAt);
             return new Result(503, null, "text/plain", null);

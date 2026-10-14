@@ -123,10 +123,17 @@ const API = (() => {
     }
   }
 
+  // Stažená data v paměti, jen pro posledních pár stránek: u.gg má u každého šampiona všechny regiony
+  // a ranky najednou (megabajty), takže neomezená paměť by za delší běh appky narostla na stovky MB.
   const cache = new Map();
+  const CACHE_MAX = 30;
   function getJSON(url) {
     let p = cache.get(url);
-    if (!p) {
+    if (p) {
+      // Naposledy použité na konec – zahazuje se od začátku
+      cache.delete(url);
+      cache.set(url, p);
+    } else {
       // Druhý pokus obchází cache prohlížeče (odpověď uložená bez CORS hlavičky by jinak selhala)
       p = fetch(url).catch(() => fetch(url, { cache: 'reload' })).then(r => {
         // Desktop appka vrátila zálohu, protože server nejde
@@ -137,6 +144,7 @@ const API = (() => {
       });
       p.catch(() => cache.delete(url));
       cache.set(url, p);
+      while (cache.size > CACHE_MAX) cache.delete(cache.keys().next().value);
     }
     return p;
   }
@@ -165,6 +173,24 @@ const API = (() => {
     const api = v.split('.').slice(0, 2).join('.');
     return `${STATS}/${api}/${endpoint}/${path}/${v}.json`;
   }
+
+  // Adresy dat – používá je načítání níž i záloha (desktop.js), která je stahuje bez načtení do paměti
+  const OPGG = 'https://lol-api-champion.op.gg/api/global/champions/arena';
+  const urls = {
+    tierList: ({ patch, region, rank, queue }) => statsUrl('champion_ranking', patch, `${region}/${patch}/${queue}/${rank}`),
+    // [overview, matchups] – matchupy jsou jen doplněk
+    championStats: ({ patch, queue, champId }) => [
+      statsUrl('overview', patch, `${patch}/${queue}/${champId}`),
+      statsUrl('matchups', patch, `${patch}/${queue}/${champId}`),
+    ],
+    championKit: (st, champ) => `${DD}/cdn/${st.ddVersion}/data/${LANG}/champion/${champ.id}.json`,
+    mayhemTierList: patch => `${MAYHEM}/${patch}/tierlist-champions-${patch}.json`,
+    mayhemAugments: (patch, champId) =>
+      `${MAYHEM}/${patch}/tierlist-per-champion-augments-rarity-${patch}/tierlist-augments-${champId}-${patch}.json`,
+    augments: () => `${CD}/plugins/rcp-be-lol-game-data/global/${CD_LANG}/v1/cherry-augments.json`,
+    arenaTierList: () => OPGG,
+    arenaChampion: champId => `${OPGG}/${champId}`,
+  };
 
   // ---------- Statická data (Data Dragon) ----------
 
@@ -272,7 +298,7 @@ const API = (() => {
   }
 
   async function getChampionKit(st, champ) {
-    const j = await getJSON(`${DD}/cdn/${st.ddVersion}/data/${LANG}/champion/${champ.id}.json`);
+    const j = await getJSON(urls.championKit(st, champ));
     const c = j.data[champ.id];
     return {
       spells: c.spells.map((s, i) => ({
@@ -293,7 +319,7 @@ const API = (() => {
   //           počet her (jmenovatel pro pick rate) ]
 
   async function getTierList({ patch, region, rank, queue }) {
-    const raw = await getJSON(statsUrl('champion_ranking', patch, `${region}/${patch}/${queue}/${rank}`));
+    const raw = await getJSON(urls.tierList({ patch, region, rank, queue }));
     const [byRole, bans = {}, updated, games] = raw;
     const totalMatches = bans.total_matches || games || 1;
     const totalGames = typeof games === 'number' && games > 0 ? games : totalMatches;
@@ -369,10 +395,8 @@ const API = (() => {
   //                                         [výhry, zápasy], ?, shardy, ...], "aktualizováno"]
 
   async function getChampionStats({ patch, queue, champId }) {
-    const [ov, mu] = await Promise.all([
-      getJSON(statsUrl('overview', patch, `${patch}/${queue}/${champId}`)),
-      getJSON(statsUrl('matchups', patch, `${patch}/${queue}/${champId}`)).catch(() => null),
-    ]);
+    const [ovUrl, muUrl] = urls.championStats({ patch, queue, champId });
+    const [ov, mu] = await Promise.all([getJSON(ovUrl), getJSON(muUrl).catch(() => null)]);
     return { ov, mu };
   }
 
@@ -414,7 +438,7 @@ const API = (() => {
   // ---------- ARAM: Mayhem (u.gg má vlastní soubory jen s pořadím) ----------
 
   async function getMayhemTierList(patch) {
-    const j = await getJSON(`${MAYHEM}/${patch}/tierlist-champions-${patch}.json`);
+    const j = await getJSON(urls.mayhemTierList(patch));
     const rows = [];
     for (const tier of TIERS) {
       for (const id of j.tiers?.[tier.key] || []) rows.push({ champId: +id, role: 'none', tier, z: -rows.length });
@@ -424,14 +448,14 @@ const API = (() => {
 
   // { kPrismatic: [id, ...], kGold: [...], kSilver: [...] } – seřazené od nejlepšího
   async function getMayhemAugments(patch, champId) {
-    const j = await getJSON(`${MAYHEM}/${patch}/tierlist-per-champion-augments-rarity-${patch}/tierlist-augments-${champId}-${patch}.json`);
+    const j = await getJSON(urls.mayhemAugments(patch, champId));
     return j.rarities || {};
   }
 
   // Augmenty Areny i Mayhemu (v jazyce appky) z CommunityDragonu
   let augmentsPromise = null;
   function getAugments() {
-    augmentsPromise ??= getJSON(`${CD}/plugins/rcp-be-lol-game-data/global/${CD_LANG}/v1/cherry-augments.json`).then(list => {
+    augmentsPromise ??= getJSON(urls.augments()).then(list => {
       const map = new Map();
       for (const a of list) {
         map.set(a.id, { id: a.id, name: a.nameTRA || t('augment.unknown', { id: a.id }), rarity: a.rarity, icon: a.augmentSmallIconPath ? cdAsset(a.augmentSmallIconPath) : '' });
@@ -466,8 +490,6 @@ const API = (() => {
   // u.gg má Arenu jen ze starších patchů a prizmatické itemy vůbec – OP.GG má obojí.
   // play = her, win = top 4, total_place = součet umístění (1–8), first_place = počet výher.
 
-  const OPGG = 'https://lol-api-champion.op.gg/api/global/champions/arena';
-
   const stat = s => ({
     matches: s.play || 0,
     wins: s.win || 0,
@@ -478,7 +500,7 @@ const API = (() => {
   });
 
   async function getArenaTierList() {
-    const j = await getJSON(OPGG);
+    const j = await getJSON(urls.arenaTierList());
     const rows = (j.data || []).filter(c => c.average_stats && !c.is_rip).map(c => {
       const s = c.average_stats;
       return {
@@ -494,7 +516,7 @@ const API = (() => {
   }
 
   async function getArenaChampion(champId) {
-    const j = await getJSON(`${OPGG}/${champId}`);
+    const j = await getJSON(urls.arenaChampion(champId));
     const d = j.data || {};
     const list = arr => (arr || []).map(x => ({ ids: x.ids || [], ...stat(x) }));
     return {
@@ -558,7 +580,7 @@ const API = (() => {
     getPatches, getStatic, getChampionKit, getTierList, scoreRole,
     getChampionStats, championRoles, championBuild, championMatchups, championArena,
     getMayhemTierList, getMayhemAugments, getAugments, getAugmentNames, getItemNames,
-    getArenaTierList, getArenaChampion, scorePlacement, tierByPosition,
+    getArenaTierList, getArenaChampion, scorePlacement, tierByPosition, urls,
     // Zapomene stažená data v paměti, takže další dotazy půjdou znovu (záloha)
     clearCaches: () => {
       cache.clear();

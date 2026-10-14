@@ -683,8 +683,62 @@ public sealed class MainForm : Form
 
     void PostToWeb(object message)
     {
+        WakeWeb();
         try { web.CoreWebView2?.PostWebMessageAsJson(JsonSerializer.Serialize(message, Json)); }
         catch { /* okno se zavírá */ }
+    }
+
+    // ---------- Úspora výkonu ----------
+    // Okno schované v oznamovací oblasti, LoL neběží a nic se neděje: rozhraní (WebView2) se uspí –
+    // JavaScript stojí a prohlížeč uvolní paměť. Probudí ho otevření okna nebo jakákoli zpráva z appky.
+
+    bool webReady;      // stránka se načetla (jinak by se uspala uprostřed načítání)
+    bool webSleeping;
+    long idleSince;
+
+    void WakeWeb()
+    {
+        idleSince = 0;
+        if (!webSleeping) return;
+        webSleeping = false;
+        var core = web.CoreWebView2;
+        if (core == null) return;
+        try { if (core.IsSuspended) core.Resume(); }
+        catch { /* okno se zavírá */ }
+        try { core.MemoryUsageTargetLevel = CoreWebView2MemoryUsageTargetLevel.Normal; }
+        catch { /* starší WebView2 Runtime to neumí */ }
+    }
+
+    async void SleepWebIfIdle()
+    {
+        var core = web.CoreWebView2;
+        bool idle = core != null && webReady && !Visible && !connected && gameKey == null
+            && !backupRunning && !overlayDemo && !panelDemo;
+        if (!idle)
+        {
+            idleSince = 0;
+            return;
+        }
+        if (webSleeping) return;
+        long now = Environment.TickCount64;
+        if (idleSince == 0) idleSince = now;
+        if (now - idleSince < 60_000) return; // minuta klidu (třeba po zavření okna)
+        webSleeping = true;
+        try { core!.MemoryUsageTargetLevel = CoreWebView2MemoryUsageTargetLevel.Low; }
+        catch { /* starší WebView2 Runtime to neumí */ }
+        try
+        {
+            await core!.TrySuspendAsync();
+            // Mezitím přišla zpráva nebo se otevřelo okno
+            if (!webSleeping && core.IsSuspended) core.Resume();
+        }
+        catch { /* uspání se nepovedlo – stačí nižší spotřeba paměti */ }
+    }
+
+    protected override void OnVisibleChanged(EventArgs e)
+    {
+        base.OnVisibleChanged(e);
+        if (Visible) WakeWeb();
     }
 
     async void OnWebMessage(object? sender, CoreWebView2WebMessageReceivedEventArgs e)
@@ -697,6 +751,7 @@ public sealed class MainForm : Form
         {
             case "ready":
                 // Stránka se (znovu) načetla – pošli jí aktuální stav
+                webReady = true;
                 PostClientStatus();
                 PostAppStatus();
                 PostUpdate();
@@ -731,9 +786,20 @@ public sealed class MainForm : Form
                 {
                     settings.LastBackup = DateTime.Now;
                     settings.Save();
+                    // Data starých patchů (měsíc nepoužitá) ze zálohy pryč
+                    await Task.Run(() => DataCache.Prune(TimeSpan.FromDays(30)));
                 }
                 PostAppStatus();
                 break;
+            case "warm":
+            {
+                // Záloha: adresy stáhne appka sama, rozhraní je nenačítá (data všech šampionů by zabrala spoustu paměti)
+                var id = msg["id"]?.GetValue<int>() ?? 0;
+                var urls = (msg["urls"] as JsonArray)?.Select(Str).ToList() ?? [];
+                var status = await dataCache.WarmAsync(urls);
+                PostToWeb(new { type = "result", id, ok = true, message = "", data = status });
+                break;
+            }
             case "settings":
                 overlayEnabled = msg["overlay"]?.GetValue<bool>() ?? true;
                 cardLabelsEnabled = msg["cards"]?.GetValue<bool>() ?? true;
@@ -766,6 +832,10 @@ public sealed class MainForm : Form
                     p.Post(new { type = "live", live = msg["live"]?.DeepClone() });
                     p.Post(new { type = "ranks", ranks = msg["ranks"]?.DeepClone() });
                     p.ShowOn(Screen.FromControl(this));
+                }
+                else if (gameKey == null)
+                {
+                    ClosePanel();
                 }
                 else
                 {
@@ -932,9 +1002,20 @@ public sealed class MainForm : Form
             panel?.Hide();
             if (panelDemo && gameKey == null) panelDemo = false;
             UpdateHotkeys();
+            // Mimo hru panel nepotřebujeme – zavřít až po návratu z události jeho WebView2
+            if (gameKey == null) BeginInvoke(ClosePanel);
         };
         panel.Post(new { type = "prefs", lang = uiLang, accent = uiAccent, panelKey = Hotkeys.Get(Hotkeys.Panel).Label });
         return panel;
+    }
+
+    // Panel má vlastní prohlížeč (WebView2), který zabírá paměť – po hře se zavře a Ctrl+X ho vytvoří znovu
+    void ClosePanel()
+    {
+        if (panelDemo && gameKey == null) return; // mezitím se zapnula ukázka
+        var p = panel;
+        panel = null;
+        p?.Dispose();
     }
 
     void TogglePanel()
@@ -1016,7 +1097,9 @@ public sealed class MainForm : Form
         {
             try { await TickAsync(); }
             catch { /* klient se zrovna zavírá/otevírá – zkusíme příště */ }
-            await Task.Delay(phase is "ChampSelect" or "InProgress" ? 1000 : 2500);
+            SleepWebIfIdle();
+            // Bez LoL klienta stačí kontrola jednou za 5 s (hledání klienta prochází všechny procesy)
+            await Task.Delay(phase is "ChampSelect" or "InProgress" || gameKey != null ? 1000 : connected ? 2500 : 5000);
         }
     }
 
@@ -1079,7 +1162,7 @@ public sealed class MainForm : Form
         }
 
         // Běžící hra (Live Client Data API)
-        bool maybeInGame = phase is "InProgress" or "GameStart" or "Reconnect" || (!connected && GameProcessRunning());
+        bool maybeInGame = phase is "InProgress" or "GameStart" or "Reconnect" || (!connected && lcu.GameProcessSeen);
         var snap = maybeInGame ? await liveGame.GetAsync() : null;
         if (snap != null)
         {
@@ -1124,18 +1207,11 @@ public sealed class MainForm : Form
             gamePid = 0;
             keyHook.Uninstall();
             overlay?.SetBuild(null);
-            if (!panelDemo) panel?.Hide();
+            if (!panelDemo) ClosePanel();
         }
         UpdateOverlay();
         UpdateHotkeys();
         UpdateAugScan();
-    }
-
-    static bool GameProcessRunning()
-    {
-        var procs = Process.GetProcessesByName("League of Legends");
-        foreach (var p in procs) p.Dispose();
-        return procs.Length > 0;
     }
 
     // Ukázkový stav: 3. úroveň, jeden bod nerozdělený, koupené startovní itemy
