@@ -24,7 +24,7 @@
   <a href="#-faq">FAQ</a>
 </p>
 
-![NotLoL tier list for Ranked Solo/Duo](docs/images/tier-list.png)
+![NotLoL tier list for Ranked Flex ADC in the tier view](docs/images/tier-list.png)
 
 ## ✨ What's inside
 
@@ -32,7 +32,7 @@
 
 Ranked Solo/Duo, Flex, Normal Draft, ARAM, ARAM: Mayhem and Arena – always for the newest patch. Pick your rank and region, sort by win rate, pick rate or ban rate, see who counters whom, or switch to the classic tier view.
 
-![Tier view for ARAM: Mayhem](docs/images/tiers.png)
+![Tier list table with win, pick and ban rates, KDA and counters](docs/images/tier-table.png)
 
 ### 🧩 Builds, runes and matchups – imported in one click
 
@@ -60,9 +60,17 @@ NotLoL opens your champion's build as soon as you pick it. In ARAM it shows whet
 
 ![In-game panel (Ctrl+X), shown with preview data](docs/images/ingame-panel.png)
 
+### 🔎 Player profiles
+
+Look up any player by Riot ID: their rank, the roles and game modes they play, who they play with most, their champion mastery and stats like damage per minute or kill participation. Click any match in their history to see every player's damage, gold, CS, vision and items, or compare up to 5 players side by side. Your own profile sits in the top right corner.
+
+![Player profile with ranks, roles, game modes, teammates and stats](docs/images/profile.png)
+
+![Last 20 games and match history](docs/images/matches.png)
+
 ### ⚙️ Stays out of your way
 
-NotLoL starts quietly with Windows and waits in the tray, updates itself, speaks Czech, Slovak, English, German and Polish, and comes in a dark gaming look with eight neon accent colors. While you're not playing, it sleeps in the tray and barely uses your PC. It keeps an hourly backup of all its data, so it keeps working even when a data source goes down. You can also look up any player by Riot ID: see the roles and game modes they play, who they play with most, their champion mastery and stats like damage per minute or kill participation, and click any match in their history to see every player's damage, gold, CS, vision and items. Up to 5 players can be compared side by side. Your own profile sits in the top right corner.
+NotLoL starts quietly with Windows and waits in the tray, updates itself, speaks Czech, Slovak, English, German and Polish, and comes in a dark gaming look with eight neon accent colors. While you're not playing, it sleeps in the tray and barely uses your PC. It keeps an hourly backup of all its data, so it keeps working even when a data source goes down.
 
 ![Settings](docs/images/settings.png)
 
