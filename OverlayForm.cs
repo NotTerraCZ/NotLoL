@@ -17,12 +17,28 @@ sealed class OverlayForm : Form
         Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "NotLoL", "overlay.json");
     static readonly HttpClient Http = new() { Timeout = TimeSpan.FromSeconds(10) };
 
-    static readonly Color Bg = Color.FromArgb(14, 18, 30);
-    static readonly Color Line = Color.FromArgb(37, 45, 68);
-    static readonly Color Fg = Color.FromArgb(233, 236, 245);
-    static readonly Color Muted = Color.FromArgb(138, 146, 173);
-    static readonly Color Accent = Color.FromArgb(108, 140, 255);
+    // Barvy ve stylu rozhraní (tmavé pozadí, neonové zvýraznění)
+    static readonly Color Bg = Color.FromArgb(16, 13, 21);
+    static readonly Color Line = Color.FromArgb(46, 39, 57);
+    static readonly Color Fg = Color.FromArgb(242, 240, 247);
+    static readonly Color Muted = Color.FromArgb(155, 147, 172);
+    static readonly Color Hint = Color.FromArgb(104, 96, 121);
+    static readonly Color Ink = Color.FromArgb(13, 11, 18); // text na barevných štítcích
     static readonly Color Good = Color.FromArgb(62, 224, 160);
+
+    /// <summary>Barvy zvýraznění z Nastavení → Vzhled (stejné jako ve style.css).</summary>
+    public static readonly Dictionary<string, Color> Accents = new()
+    {
+        ["red"] = Color.FromArgb(250, 30, 78),
+        ["orange"] = Color.FromArgb(255, 122, 26),
+        ["blue"] = Color.FromArgb(108, 140, 255),
+        ["hextech"] = Color.FromArgb(31, 195, 217),
+        ["violet"] = Color.FromArgb(159, 123, 255),
+        ["gold"] = Color.FromArgb(214, 173, 85),
+        ["rose"] = Color.FromArgb(255, 92, 138),
+        ["emerald"] = Color.FromArgb(44, 207, 150),
+    };
+    Color accentColor = Accents["red"];
     static readonly Dictionary<string, Color> SkillColors = new()
     {
         ["Q"] = Color.FromArgb(108, 140, 255),
@@ -117,7 +133,7 @@ sealed class OverlayForm : Form
     protected override void OnHandleCreated(EventArgs e)
     {
         base.OnHandleCreated(e);
-        int round = 2; // DWMWCP_ROUND
+        int round = 3; // DWMWCP_ROUNDSMALL – ostřejší rohy jako v rozhraní
         DwmSetWindowAttribute(Handle, 33, ref round, sizeof(int));
         Relayout();
     }
@@ -132,6 +148,14 @@ sealed class OverlayForm : Form
     {
         base.OnDpiChanged(e);
         Relayout();
+    }
+
+    public void SetAccent(string? name)
+    {
+        var color = Accents.GetValueOrDefault(name ?? "", Accents["red"]);
+        if (color == accentColor) return;
+        accentColor = color;
+        Invalidate();
     }
 
     public void ToggleMoveMode() => SetMoveMode(!moveMode);
@@ -217,8 +241,16 @@ sealed class OverlayForm : Form
         g.ScaleTransform(S, S);
         Draw(g);
         g.ResetTransform();
-        using var border = new Pen(moveMode ? Accent : Line, moveMode ? 2 : 1) { DashStyle = moveMode ? DashStyle.Dash : DashStyle.Solid };
+        using var border = new Pen(moveMode ? accentColor : Line, moveMode ? 2 : 1) { DashStyle = moveMode ? DashStyle.Dash : DashStyle.Solid };
         g.DrawRectangle(border, 0, 0, ClientSize.Width - 1, ClientSize.Height - 1);
+        // Neonový proužek nahoře a zkosený roh vlevo nahoře
+        g.SmoothingMode = SmoothingMode.None;
+        using var accent = new SolidBrush(accentColor);
+        int stripe = Math.Max(2, Px(2));
+        g.FillRectangle(accent, 0, 0, ClientSize.Width, stripe);
+        g.SmoothingMode = SmoothingMode.AntiAlias;
+        float c = Px(14);
+        g.FillPolygon(accent, new[] { new PointF(0, 0), new PointF(c, 0), new PointF(0, c) });
     }
 
     /// <summary>Vykreslí obsah (g == null jen změří) a vrátí výšku v logických pixelech.</summary>
@@ -305,7 +337,7 @@ sealed class OverlayForm : Form
                         g.DrawRectangle(pen, rect.X, rect.Y, rect.Width, rect.Height);
                     }
                     using var sf = new StringFormat { Alignment = StringAlignment.Center, LineAlignment = StringAlignment.Center };
-                    using var tb = new SolidBrush(done ? Muted : Color.FromArgb(10, 13, 22));
+                    using var tb = new SolidBrush(done ? Muted : Ink);
                     g.DrawString(key, fCell, tb, rect, sf);
                 }
             }
@@ -365,7 +397,7 @@ sealed class OverlayForm : Form
 
         string hide = Hotkeys.Get(Hotkeys.Overlay).Label, move = Hotkeys.Get(Hotkeys.Move).Label;
         var hint = moveMode ? Loc.T("ovHintMove", "Přetáhni myší · {0} hotovo", move) : Loc.T("ovHint", "{0} skrýt · {1} přesunout", hide, move);
-        DrawText(g, hint, fSmall, moveMode ? Accent : Color.FromArgb(93, 101, 130), pad, y);
+        DrawText(g, hint, fSmall, moveMode ? accentColor : Hint, pad, y);
         return y + 14 + pad;
     }
 
@@ -384,7 +416,7 @@ sealed class OverlayForm : Form
                 float r = size * 0.34f;
                 using var brush = new SolidBrush(Good);
                 g.FillEllipse(brush, x + size - r - 1, y + size - r - 1, r, r);
-                using var pen = new Pen(Color.FromArgb(10, 13, 22), 2f);
+                using var pen = new Pen(Ink, 2f);
                 float cx = x + size - r - 1, cy = y + size - r - 1;
                 g.DrawLines(pen, new[] { new PointF(cx + r * .25f, cy + r * .52f), new PointF(cx + r * .45f, cy + r * .72f), new PointF(cx + r * .78f, cy + r * .3f) });
             }
@@ -398,10 +430,10 @@ sealed class OverlayForm : Form
         if (b.SkillIcons.TryGetValue(key, out var url)) DrawImage(g, url, x, y, size, 6);
         if (g == null) return;
         var badge = new RectangleF(x + size - 13, y + size - 13, 15, 15);
-        using var brush = new SolidBrush(SkillColors.GetValueOrDefault(key, Accent));
+        using var brush = new SolidBrush(SkillColors.GetValueOrDefault(key, accentColor));
         FillRounded(g, brush, badge, 4);
         using var sf = new StringFormat { Alignment = StringAlignment.Center, LineAlignment = StringAlignment.Center };
-        using var tb = new SolidBrush(Color.FromArgb(10, 13, 22));
+        using var tb = new SolidBrush(Ink);
         g.DrawString(key, f, tb, badge, sf);
     }
 

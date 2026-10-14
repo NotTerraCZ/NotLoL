@@ -34,9 +34,9 @@ const keysHtml = label => label.split('+').map(k => `<kbd>${esc(k)}</kbd>`).join
 
 // Barva zvýraznění (stejné úložiště jako hlavní okno)
 function setAccent(accent) {
-  document.documentElement.dataset.accent = accent || 'blue';
+  document.documentElement.dataset.accent = accent || 'red';
 }
-try { setAccent(JSON.parse(localStorage.getItem('notlol.prefs.v1'))?.accent); } catch { setAccent('blue'); }
+try { setAccent(JSON.parse(localStorage.getItem('notlol.prefs.v1'))?.accent); } catch { setAccent('red'); }
 
 host?.addEventListener('message', e => {
   const m = e.data || {};

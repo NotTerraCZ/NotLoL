@@ -8,22 +8,23 @@
   <meta name="description" content="League of Legends tier list, builds, runes, matchups, ARAM, Mayhem and Arena.">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap">
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@500;600;700&family=Inter:wght@400;500;600;700;800;900&display=swap">
   <link rel="stylesheet" href="style.css">
   <link rel="stylesheet" href="cards.css">
 </head>
 <body>
+  <aside class="sidebar">
+    <a class="brand" href="#/" aria-label="NotLoL"><img class="logo" src="img/logo.png" alt=""></a>
+    <nav class="nav">
+      <a href="#/" data-nav="tier" data-icon="tier"><span data-i18n="nav.tier"></span></a>
+      <a href="#/players" data-nav="players" data-icon="users"><span data-i18n="nav.players"></span></a>
+      <a href="#/settings" data-nav="settings" data-icon="settings"><span data-i18n="nav.settings"></span></a>
+    </nav>
+  </aside>
+
   <header class="topbar">
     <div class="topbar-inner">
-      <a class="brand" href="#/" aria-label="NotLoL">
-        <img class="logo" src="img/logo.png" alt="">
-        <span class="wordmark">Not<span>LoL</span></span>
-      </a>
-      <nav class="nav">
-        <a href="#/" data-nav="tier" data-icon="tier"><span data-i18n="nav.tier"></span></a>
-        <a href="#/players" data-nav="players" data-icon="users"><span data-i18n="nav.players"></span></a>
-        <a href="#/settings" data-nav="settings" data-icon="settings"><span data-i18n="nav.settings"></span></a>
-      </nav>
+      <a class="wordmark" href="#/" aria-label="NotLoL">Not<span>LoL</span></a>
       <div class="search">
         <span class="search-ico" data-icon="search"></span>
         <input id="globalSearch" class="input" type="search" data-i18n-ph="search.placeholder" data-i18n-aria="search.aria" autocomplete="off" spellcheck="false">
