@@ -390,11 +390,33 @@ public sealed class MainForm : Form
         if (updater.PrepareRestart()) ExitApp();
     }
 
+    // Proces okna v popředí, u kterého už víme, jestli je to hra (zjištění názvu procesu je pomalejší)
+    int fgCheckedPid;
+    bool fgIsGame;
+
     bool GameInForeground()
     {
-        if (gamePid == 0) return false;
-        GetWindowThreadProcessId(GetForegroundWindow(), out uint pid);
-        return pid == gamePid;
+        GetWindowThreadProcessId(GetForegroundWindow(), out uint fg);
+        int pid = (int)fg;
+        if (pid == 0) return false;
+        if (pid == gamePid) return true;
+        // Hra mohla mezitím dostat nové id procesu (reconnect – stejný zápas, nový proces) nebo se ho
+        // nepovedlo zjistit: rozhodne název procesu v popředí
+        if (pid != fgCheckedPid)
+        {
+            fgCheckedPid = pid;
+            try
+            {
+                using var p = Process.GetProcessById(pid);
+                fgIsGame = p.ProcessName.Equals("League of Legends", StringComparison.OrdinalIgnoreCase);
+            }
+            catch
+            {
+                fgIsGame = false; // proces mezitím skončil nebo k němu nemáme přístup
+            }
+        }
+        if (fgIsGame && gameKey != null) gamePid = pid;
+        return fgIsGame;
     }
 
     static int FindGamePid()
@@ -684,62 +706,52 @@ public sealed class MainForm : Form
 
     void PostToWeb(object message)
     {
-        WakeWeb();
+        WebMemoryNormal();
         try { web.CoreWebView2?.PostWebMessageAsJson(JsonSerializer.Serialize(message, Json)); }
         catch { /* okno se zavírá */ }
     }
 
-    // ---------- Úspora výkonu ----------
-    // Okno schované v oznamovací oblasti, LoL neběží a nic se neděje: rozhraní (WebView2) se uspí –
-    // JavaScript stojí a prohlížeč uvolní paměť. Probudí ho otevření okna nebo jakákoli zpráva z appky.
+    // ---------- Úspora paměti ----------
+    // Okno schované v oznamovací oblasti, LoL neběží a nic se neděje: rozhraní (WebView2) dostane nižší
+    // cíl spotřeby paměti. JavaScript přitom běží dál – rozhraní musí hned reagovat na klienta a hru
+    // (build pro overlay, karty, import), takže se nesmí uspávat (TrySuspend by ho zmrazil).
 
-    bool webReady;      // stránka se načetla (jinak by se uspala uprostřed načítání)
-    bool webSleeping;
+    bool webReady;      // stránka se načetla (jinak by se paměť omezila uprostřed načítání)
+    bool webLowMemory;
     long idleSince;
 
-    void WakeWeb()
+    void WebMemoryNormal()
     {
         idleSince = 0;
-        if (!webSleeping) return;
-        webSleeping = false;
-        var core = web.CoreWebView2;
-        if (core == null) return;
-        try { if (core.IsSuspended) core.Resume(); }
-        catch { /* okno se zavírá */ }
-        try { core.MemoryUsageTargetLevel = CoreWebView2MemoryUsageTargetLevel.Normal; }
+        if (!webLowMemory) return;
+        webLowMemory = false;
+        try { if (web.CoreWebView2 is { } core) core.MemoryUsageTargetLevel = CoreWebView2MemoryUsageTargetLevel.Normal; }
         catch { /* starší WebView2 Runtime to neumí */ }
     }
 
-    async void SleepWebIfIdle()
+    void UpdateWebMemory()
     {
         var core = web.CoreWebView2;
         bool idle = core != null && webReady && !Visible && !connected && gameKey == null
             && !backupRunning && !overlayDemo && !panelDemo;
         if (!idle)
         {
-            idleSince = 0;
+            WebMemoryNormal();
             return;
         }
-        if (webSleeping) return;
+        if (webLowMemory) return;
         long now = Environment.TickCount64;
         if (idleSince == 0) idleSince = now;
         if (now - idleSince < 60_000) return; // minuta klidu (třeba po zavření okna)
-        webSleeping = true;
+        webLowMemory = true;
         try { core!.MemoryUsageTargetLevel = CoreWebView2MemoryUsageTargetLevel.Low; }
         catch { /* starší WebView2 Runtime to neumí */ }
-        try
-        {
-            await core!.TrySuspendAsync();
-            // Mezitím přišla zpráva nebo se otevřelo okno
-            if (!webSleeping && core.IsSuspended) core.Resume();
-        }
-        catch { /* uspání se nepovedlo – stačí nižší spotřeba paměti */ }
     }
 
     protected override void OnVisibleChanged(EventArgs e)
     {
         base.OnVisibleChanged(e);
-        if (Visible) WakeWeb();
+        if (Visible) WebMemoryNormal();
     }
 
     async void OnWebMessage(object? sender, CoreWebView2WebMessageReceivedEventArgs e)
@@ -1100,7 +1112,7 @@ public sealed class MainForm : Form
         {
             try { await TickAsync(); }
             catch { /* klient se zrovna zavírá/otevírá – zkusíme příště */ }
-            SleepWebIfIdle();
+            UpdateWebMemory();
             // Bez LoL klienta stačí kontrola jednou za 5 s (hledání klienta prochází všechny procesy)
             await Task.Delay(phase is "ChampSelect" or "InProgress" || gameKey != null ? 1000 : connected ? 2500 : 5000);
         }
@@ -1165,7 +1177,10 @@ public sealed class MainForm : Form
         }
 
         // Běžící hra (Live Client Data API)
-        bool maybeInGame = phase is "InProgress" or "GameStart" or "Reconnect" || (!connected && lcu.GameProcessSeen);
+        // Hra bez klienta (zavřený nebo neodpovídá): proces hry zjistí hledání klienta, a když se nehledal
+        // (spojení zůstalo, jen klient neodpověděl), zjistí se zvlášť
+        bool gameProcess = !connected && (lcu.Connected ? FindGamePid() != 0 : lcu.GameProcessSeen);
+        bool maybeInGame = phase is "InProgress" or "GameStart" or "Reconnect" || gameProcess;
         var snap = maybeInGame ? await liveGame.GetAsync() : null;
         if (snap != null)
         {
