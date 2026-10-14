@@ -15,6 +15,9 @@ sealed class LeagueClient : IDisposable
 
     public bool Connected => http != null;
 
+    /// <summary>Běží hra ("League of Legends")? Zjišťuje se při hledání klienta, takže platí, když připojený není.</summary>
+    public bool GameProcessSeen { get; private set; }
+
     public bool TryConnect()
     {
         if (http != null) return true;
@@ -49,24 +52,38 @@ sealed class LeagueClient : IDisposable
 
     public void Dispose() => Disconnect();
 
-    static string? FindLockfile()
+    // Výpis procesů je drahý a bez LoL běží každých pár sekund – proto jen jeden průchod pro klienta i hru
+    string? FindLockfile()
     {
-        bool running = false;
-        foreach (var name in new[] { "LeagueClientUx", "LeagueClient" })
+        bool running = false, game = false;
+        string? found = null;
+        var procs = Process.GetProcesses();
+        try
         {
-            foreach (var p in Process.GetProcessesByName(name))
+            foreach (var p in procs)
             {
+                string name;
+                try { name = p.ProcessName; }
+                catch { continue; }
+                if (name.Equals("League of Legends", StringComparison.OrdinalIgnoreCase)) game = true;
+                if (found != null || !(name.Equals("LeagueClientUx", StringComparison.OrdinalIgnoreCase)
+                    || name.Equals("LeagueClient", StringComparison.OrdinalIgnoreCase))) continue;
                 running = true;
                 try
                 {
                     var dir = Path.GetDirectoryName(p.MainModule?.FileName);
                     var file = dir == null ? null : Path.Combine(dir, "lockfile");
-                    if (file != null && File.Exists(file)) return file;
+                    if (file != null && File.Exists(file)) found = file;
                 }
                 catch { /* bez přístupu k procesu – zkusíme výchozí cestu */ }
-                finally { p.Dispose(); }
             }
         }
+        finally
+        {
+            foreach (var p in procs) p.Dispose();
+        }
+        GameProcessSeen = game;
+        if (found != null) return found;
         const string fallback = @"C:\Riot Games\League of Legends\lockfile";
         return running && File.Exists(fallback) ? fallback : null;
     }

@@ -11,8 +11,9 @@
  *   {type:'appStatus', autostart, backup}
  *   {type:'update', state, current, version, progress, checkedAt, error} – aktualizace (viz AppUpdater.cs)
  *   {type:'navigate', hash}               – např. "Nastavení" z ikony v oznamovací oblasti
+ *   {type:'backup'}                       – hodinová záloha dat (viz runBackup)
  * Odsud jdou zpět: ready, settings (overlay, jazyk, texty pro tray a overlay), import, overlayBuild,
- * checkUpdate a applyUpdate (restart do stažené verze).
+ * checkUpdate, applyUpdate (restart do stažené verze) a warm (adresy pro zálohu – stáhne je appka).
  * V obyčejném prohlížeči se nic z toho nezobrazí.
  */
 const Desktop = (() => {
@@ -33,14 +34,14 @@ const Desktop = (() => {
 
   const send = msg => host?.postMessage(msg);
   const changed = () => window.dispatchEvent(new CustomEvent('notlol-status'));
-  function request(msg) {
+  function request(msg, timeout = 15000) {
     const id = ++reqId;
     return new Promise(resolve => {
       pending.set(id, resolve);
       send({ ...msg, id });
       setTimeout(() => {
         if (pending.delete(id)) resolve({ ok: false, message: t('client.noReply') });
-      }, 15000);
+      }, timeout);
     });
   }
 
@@ -181,60 +182,90 @@ const Desktop = (() => {
   }
 
   // ---------- Hodinová záloha ----------
-  // Stáhne všechno důležité znovu – desktopová appka každou odpověď uloží na disk
-  // (a ptá se serveru "změnilo se to?", takže nezměněná data se znovu nestahují).
+  // Všechno důležité stáhne znovu desktopová appka a uloží na disk (ptá se serveru "změnilo se to?",
+  // takže nezměněná data se nestahují). Rozhraní jen sestaví seznam adres – data všech šampionů
+  // by v paměti zabrala stovky MB a jejich čtení by každou hodinu vytížilo procesor.
   let backupRunning = false;
+
+  // Stav každé adresy z appky (200 = je v záloze); dávky, ať jedna odpověď nečeká moc dlouho
+  async function warm(urls) {
+    const out = [];
+    for (let i = 0; i < urls.length; i += 40) {
+      const part = urls.slice(i, i + 40);
+      const r = await request({ type: 'warm', urls: part }, 5 * 60 * 1000);
+      out.push(...(r.ok && Array.isArray(r.data) ? r.data : part.map(() => 0)));
+    }
+    return out;
+  }
 
   async function runBackup() {
     if (backupRunning) return;
     backupRunning = true;
     let ok = 0;
     let fail = 0;
-    const track = async promise => {
-      try {
-        await promise;
-        ok++;
-      } catch {
-        fail++;
-      }
-    };
-    // Několik souběžných stahování, ať to netrvá věčnost, ale ani nezahltí u.gg
-    const pool = async (items, size, fn) => {
-      let i = 0;
-      await Promise.all(Array.from({ length: size }, async () => {
-        while (i < items.length) await track(fn(items[i++]));
-      }));
-    };
-
     try {
       API.clearCaches();
       allPatches = await API.getPatches();
       const patch = state.patch || allPatches[0];
-      const st = await API.getStatic(patch);
-      await track(API.getAugments());
+      const st = await API.getStatic(patch); // Data Dragon se uloží cestou
+      const champs = st.champList;
+
+      // Úlohy: key = data jdou dohledat ve starším patchi (jako withPatchFallback), urls(p)[0] je povinná
+      const jobs = [];
+      const add = (key, urls) => jobs.push({ key, urls });
 
       // Tier listy všech módů (s tvým regionem a rankem) + výchozí Emerald+ svět
       const tierJobs = API.QUEUES.map(q => filtersFor(q.key));
       tierJobs.push({ patch, region: 'world', rank: 'emerald_plus', queue: 'ranked_solo_5x5' });
-      await pool(tierJobs, 3, f => loadTierList(f));
+      for (const f of tierJobs) {
+        const q = API.queueByKey(f.queue);
+        if (q.mayhem) add('mayhem', p => [API.urls.mayhemTierList(p)]);
+        else add(`tl:${f.queue}:${f.region}:${f.rank}`, p => [API.urls.tierList({ ...f, patch: p })]);
+        if (q.arena) add(null, () => [API.urls.arenaTierList()]);
+      }
+      add(null, () => [API.urls.augments()]);
 
       // Buildy, runy a matchupy všech šampionů pro tvůj mód na Summoner's Rift
       // (+ pro ARAM / Mayhem / Arenu, pokud ho máš zrovna nastavený)
       const queues = [queue().noRoles ? 'ranked_solo_5x5' : state.queue];
       if (queue().noRoles) queues.push(queue().mayhem ? 'normal_aram' : state.queue);
-      const champs = st.champList;
       for (const qk of queues) {
-        await pool(champs, 4, c => withPatchFallback(patch, `ov:${qk}:${c.key}`,
-          p => API.getChampionStats({ patch: p, queue: qk, champId: c.key })));
+        for (const c of champs) add(`ov:${qk}:${c.key}`, p => API.urls.championStats({ patch: p, queue: qk, champId: c.key }));
       }
-      if (queue().mayhem) {
-        await pool(champs, 4, c => withPatchFallback(patch, `aug:${c.key}`, p => API.getMayhemAugments(p, c.key)));
-      }
-      if (queue().arena) {
-        await pool(champs, 4, c => API.getArenaChampion(c.key));
-      }
+      if (queue().mayhem) for (const c of champs) add(`aug:${c.key}`, p => [API.urls.mayhemAugments(p, c.key)]);
+      if (queue().arena) for (const c of champs) add(null, () => [API.urls.arenaChampion(c.key)]);
       // Ikony schopností (Data Dragon)
-      await pool(champs, 4, c => API.getChampionKit(st, c));
+      for (const c of champs) add(null, () => [API.urls.championKit(st, c)]);
+
+      // Každá úloha nejdřív s patchem, ve kterém data byla minule (jinak s aktuálním)
+      for (const j of jobs) {
+        j.patch = (j.key && patchMemo.get(`${j.key}@${patch}`)) || patch;
+        j.list = j.urls(j.patch);
+      }
+      const status = await warm(jobs.flatMap(j => j.list));
+      let i = 0;
+      const missing = [];
+      for (const j of jobs) {
+        const main = status[i];
+        i += j.list.length;
+        if (main === 200) ok++;
+        else if (j.key && (main === 403 || main === 404)) missing.push(j);
+        else fail++;
+      }
+
+      // Pro tenhle patch data nejsou (nový patch, Arena mimo rotaci…) – zkus starší patche
+      for (const j of missing) {
+        try {
+          await withPatchFallback(patch, j.key, async p => {
+            const list = j.urls(p);
+            const [main] = await warm(list);
+            if (main !== 200) throw new API.HttpError(main === 403 || main === 404 ? main : 503, list[0]);
+          });
+          ok++;
+        } catch {
+          fail++;
+        }
+      }
     } finally {
       backupRunning = false;
       send({ type: 'backupDone', ok, fail });
