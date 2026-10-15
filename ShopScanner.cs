@@ -37,8 +37,11 @@ sealed class ShopScanner
     OcrEngine? Engine() =>
         engine ??= OcrEngine.TryCreateFromUserProfileLanguages() ?? OcrEngine.TryCreateFromLanguage(new Language("en-US"));
 
-    /// <summary>Přečte názvy itemů v okně hry. Null = žádný item (obchod je zavřený).</summary>
-    public async Task<List<Found>?> ScanAsync(Rectangle screen)
+    /// <summary>
+    /// Přečte názvy itemů v okně hry. Null = žádný item (obchod je zavřený). Text v <paramref name="exclude"/> (okna
+    /// NotLoL – overlay s pořadím nákupu má stejné názvy itemů) se přeskočí, jinak by čísla skákala i na ně.
+    /// </summary>
+    public async Task<List<Found>?> ScanAsync(Rectangle screen, IReadOnlyList<Rectangle> exclude)
     {
         if (names.Count == 0 || Engine() is not { } ocrEngine) return null;
         if (screen.Width < 400 || screen.Height < 300) return null;
@@ -92,6 +95,7 @@ sealed class ShopScanner
                 float y1 = (float)part.Max(x => x.BoundingRect.Y + x.BoundingRect.Height);
                 var rect = new RectangleF(screen.X + x0 / scale, screen.Y + y0 / scale, (x1 - x0) / scale, (y1 - y0) / scale);
                 if (rect.Height < screen.Height * 0.007f) continue; // drobné popisky a čísla
+                if (exclude.Any(e => e.IntersectsWith(Rectangle.Round(rect)))) continue;
                 segs.Add((AugmentScanner.Norm(string.Join(" ", part.Select(x => x.Text))), rect));
             }
         }

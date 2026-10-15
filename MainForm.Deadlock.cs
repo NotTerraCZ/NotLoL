@@ -21,12 +21,15 @@ public sealed partial class MainForm
 
     readonly ShopScanner shopScanner = new();
     readonly System.Windows.Forms.Timer shopTimer = new() { Interval = 700 };
-    readonly List<ShopStepForm> shopLabels = [];
+    // Číslo kroku pro každý item zvlášť (podle id), ať si čísla mezi itemy nepřeskakují; kde mají být, určí shopLayout
+    readonly Dictionary<long, ShopStepForm> shopLabels = new();
+    readonly ShopLabelLayout shopLayout = new();
     // Pořadí nákupu: id itemu → krok a fáze. Id itemů jsou 32bitová čísla bez znaménka (3077079169…) – do int se nevejdou
     Dictionary<long, (int Step, string Phase)> shopSteps = new();
     bool shopBusy;
     int shopMisses;
     long shopUntil;
+    const int MinShopItems = 4; // tolik názvů itemů na obrazovce = je otevřený obchod
 
     bool DeadlockRunning => deadlockPid != 0;
 
@@ -149,7 +152,7 @@ public sealed partial class MainForm
     {
         if (!DeadlockRunning || !DeadlockInForeground()) return;
         // Esc nebo B při otevřeném obchodě = obchod se zavírá
-        if (vk == VK_ESCAPE || shopLabels.Any(l => l.Visible))
+        if (vk == VK_ESCAPE || shopLabels.Values.Any(l => l.Visible))
         {
             EndShopSession();
             return;
@@ -178,16 +181,17 @@ public sealed partial class MainForm
         shopBusy = true;
         try
         {
-            var found = await shopScanner.ScanAsync(screen.Value);
-            // Jistota, že je otevřený obchod: aspoň 3 itemy
-            if (found != null && found.Count >= 3)
+            var found = await shopScanner.ScanAsync(screen.Value, OwnWindowBounds());
+            if (found != null && found.Count >= MinShopItems)
             {
                 shopMisses = 0;
                 ShowShopLabels(found);
             }
-            else if (++shopMisses >= 3)
+            else
             {
-                EndShopSession();
+                // Žádný item = obchod je zavřený, čísla hned pryč; pár itemů může být jen chvilková chyba čtení
+                if (found == null || shopMisses >= 1) HideShopLabels();
+                if (++shopMisses >= 4) EndShopSession();
             }
         }
         catch
@@ -207,30 +211,37 @@ public sealed partial class MainForm
         return rect.Width > 600 && rect.Height > 400 ? rect : null;
     }
 
-    // Čísla kroků jen u itemů z pořadí nákupu – nad názvem itemu (na spodku jeho ikony). Všechna stejně velká podle
-    // písma v obchodě (medián výšky řádku – OCR občas jeden řádek nafoukne)
+    // Okna NotLoL nad hrou – čtení obchodu je přeskočí (overlay s pořadím nákupu má stejné názvy itemů). Hlavní okno
+    // ne: když má hra focus, je za ní, a otevřené přes celou obrazovku by vyřadilo celý obchod
+    List<Rectangle> OwnWindowBounds()
+    {
+        var list = new List<Rectangle>();
+        if (overlay?.Visible == true) list.Add(overlay.Bounds);
+        if (panel?.Visible == true) list.Add(panel.Bounds);
+        return list;
+    }
+
+    // Čísla kroků jen u itemů z pořadí nákupu (rozmístění a jeho ustálení: ShopLabelLayout)
     void ShowShopLabels(List<ShopScanner.Found> found)
     {
-        var heights = found.Select(f => f.LineHeight).Order().ToList();
-        int s = (int)Math.Clamp(heights[heights.Count / 2] * 1.8f, 20, 40);
-        int i = 0;
-        foreach (var f in found.Where(f => shopSteps.ContainsKey(f.Id)).OrderBy(f => shopSteps[f.Id].Step).Take(24))
+        var layout = shopLayout.Update(found.Select(f => new ShopLabelLayout.Item(f.Id, f.Name, f.LineHeight)).ToList(), shopSteps.ContainsKey);
+        foreach (var (id, rect) in layout)
         {
-            var (step, phase) = shopSteps[f.Id];
-            if (shopLabels.Count <= i) shopLabels.Add(new ShopStepForm());
-            var label = shopLabels[i++];
-            label.SetContent(step, phase);
-            label.Bounds = new Rectangle((int)(f.Name.Left + f.Name.Width / 2 - s / 2f), (int)(f.Name.Top - s - Math.Max(2, s / 8)), s, s);
+            if (!shopSteps.TryGetValue(id, out var info)) continue;
+            if (!shopLabels.TryGetValue(id, out var label)) shopLabels[id] = label = new ShopStepForm();
+            label.SetContent(info.Step, info.Phase);
+            if (label.Bounds != rect) label.Bounds = rect;
             if (!label.Visible) label.Show();
             label.KeepOnTop();
         }
-        for (; i < shopLabels.Count; i++)
-            if (shopLabels[i].Visible) shopLabels[i].Hide();
+        foreach (var (id, label) in shopLabels)
+            if (label.Visible && !layout.ContainsKey(id)) label.Hide();
     }
 
     void HideShopLabels()
     {
-        foreach (var l in shopLabels)
+        shopLayout.Clear();
+        foreach (var l in shopLabels.Values)
             if (l.Visible) l.Hide();
     }
 
