@@ -3,7 +3,7 @@
 /*
  * Deadlock (Valve): hrdinové, itemy, tier listy a buildy z deadlock-api.com – komunitní API se statistikami
  * zápasů ze hry.
- *   /v1/assets/heroes, /v1/assets/items – jména, obrázky, ceny itemů (v jazyce appky)
+ *   /v1/assets/heroes, /v1/assets/items/by-type/upgrade – jména, obrázky, ceny itemů (v jazyce appky)
  *   /v1/analytics/hero-stats            – výhry a zápasy hrdinů
  *   /v1/analytics/item-stats            – výhry, zápasy a průměrný čas nákupu itemů (pro hrdinu)
  *   /v1/builds                          – buildy hráčů ze hry, nejoblíbenější nahoře
@@ -19,20 +19,25 @@ const Deadlock = (() => {
   const MIN_PICK = 0.01;   // hrdina pod 1 % zápasů nemá tier (stejně jako málo hraní šampioni v LoL)
   const PLAYERS = 12;      // 6 na 6
 
-  // Minimální rank zápasů – badge = rank × 10 + podúroveň 1–6, názvy ranků jsou ze hry
+  // Minimální rank zápasů – badge = rank × 10 + podúroveň 1–6 (/v1/assets/ranks), názvy ranků jsou ze hry
   const RANKS = [
     { key: 'all', badge: 0 },
-    { key: 'alchemist', badge: 31, name: 'Alchemist' },
-    { key: 'ritualist', badge: 51, name: 'Ritualist' },
-    { key: 'emissary', badge: 61, name: 'Emissary' },
-    { key: 'archon', badge: 71, name: 'Archon' },
-    { key: 'oracle', badge: 81, name: 'Oracle' },
-    { key: 'phantom', badge: 91, name: 'Phantom' },
-    { key: 'ascendant', badge: 101, name: 'Ascendant' },
-    { key: 'eternus', badge: 111, name: 'Eternus' },
+    { key: 'acolyte', badge: 31, name: { en: 'Acolyte', cs: 'Akolyta', de: 'Akolyth', pl: 'Akolita' } },
+    { key: 'sentinel', badge: 41, name: { en: 'Sentinel', cs: 'Sentinel', de: 'Wächter', pl: 'Konstabl' } },
+    { key: 'mystic', badge: 51, name: { en: 'Mystic', cs: 'Mystik', de: 'Mystiker', pl: 'Mistyk' } },
+    { key: 'ritualist', badge: 61, name: { en: 'Ritualist', cs: 'Obřadník', de: 'Ritualist', pl: 'Rytualista' } },
+    { key: 'emissary', badge: 71, name: { en: 'Emissary', cs: 'Vyslanec', de: 'Emissär', pl: 'Emisariusz' } },
+    { key: 'oracle', badge: 81, name: { en: 'Oracle', cs: 'Prorok', de: 'Orakel', pl: 'Wieszcz' } },
+    { key: 'phantom', badge: 91, name: { en: 'Phantom', cs: 'Fantóm', de: 'Phantom', pl: 'Fantom' } },
+    { key: 'ascendant', badge: 101, name: { en: 'Ascendant', cs: 'Nadčlověk', de: 'Aszendent', pl: 'Wyniesiony' } },
+    { key: 'eternus', badge: 111, name: { en: 'Eternus', cs: 'Eternus', de: 'Ewiger', pl: 'Eternus' } },
   ];
   const rankByKey = k => RANKS.find(r => r.key === k) || RANKS[0];
-  const rankLabel = r => (r.badge ? `${r.name}${r.key === 'eternus' ? '' : '+'}` : t('dl.rankAll'));
+  const rankLabel = r => {
+    if (!r.badge) return t('dl.rankAll');
+    const name = r.name[I18N.code === 'sk' ? 'cs' : I18N.code] || r.name.en;
+    return r.key === 'eternus' ? name : `${name}+`;
+  };
 
   // Barvy a názvy typů itemů ve hře: zbraň (oranžová), vitalita (zelená), duch (fialová)
   const SLOTS = ['weapon', 'vitality', 'spirit'];
@@ -40,7 +45,10 @@ const Deadlock = (() => {
 
   const num = v => (typeof v === 'number' && isFinite(v) ? v : 0);
   const strip = s => String(s || '').replace(/<[^>]*>/g, '').replace(/\s+/g, ' ').trim();
-  const since = () => Math.floor(Date.now() / 86400000 - DAYS) * 86400; // začátek dne (UTC) – adresa se mění jednou denně
+  // Jména v češtině a polštině mají na začátku gramatický rod pro hru („#|ma|#Infernus“)
+  const cleanName = s => strip(s).replace(/^#\|[^|]*\|#/, '').trim();
+  const dayAgo = days => Math.floor(Date.now() / 86400000 - days) * 86400; // začátek dne (UTC) – adresa se mění jednou denně
+  const since = () => dayAgo(DAYS);
   const rankQ = badge => (badge ? `&min_average_badge=${badge}` : '');
 
   // ---------- Stahování ----------
@@ -66,24 +74,28 @@ const Deadlock = (() => {
     return p;
   }
 
-  // Data ze hry v jazyce appky; když ho API nemá, anglicky
+  // Data ze hry v jazyce appky; když ho API nemá, anglicky. Jen hratelní hrdinové a jen itemy z obchodu
+  // (celý seznam itemů má i schopnosti a zbraně – 3× víc dat)
+  const ASSETS = { heroes: 'heroes?only_active=true&', items: 'items/by-type/upgrade?' };
+  const assetUrl = (what, language = lang()) => `${BASE}/v1/assets/${ASSETS[what]}language=${language}`;
   async function assetsJSON(what, language = lang()) {
     try {
-      return await getJSON(`${BASE}/v1/assets/${what}?language=${language}`);
+      return await getJSON(assetUrl(what, language));
     } catch (err) {
       if (language === 'english') throw err;
-      return getJSON(`${BASE}/v1/assets/${what}?language=english`);
+      return getJSON(assetUrl(what, 'english'));
     }
   }
 
   const list = j => (Array.isArray(j) ? j : Array.isArray(j?.data) ? j.data : []);
 
   function toItem(i) {
+    const name = cleanName(i.name);
     return {
       id: i.id,
       cls: i.class_name || '',
-      name: i.name,
-      norm: API.normalize(i.name),
+      name,
+      norm: API.normalize(name),
       slot: SLOTS.includes(i.item_slot_type) ? i.item_slot_type : 'weapon',
       tier: num(i.item_tier),
       cost: num(i.cost),
@@ -101,15 +113,20 @@ const Deadlock = (() => {
         .filter(h => h && h.id && h.name && h.player_selectable !== false && !h.disabled && !h.in_development)
         .map(h => {
           const img = h.images || {};
+          const name = cleanName(h.name);
           return {
             id: h.id,
-            name: h.name,
-            slug: API.normalize(h.name),
-            norm: API.normalize(h.name),
+            name,
+            // Adresa stránky nezávislá na jazyku (hero_inferno → inferno)
+            slug: API.normalize(String(h.class_name || '').replace(/^hero_/, '')) || API.normalize(name),
+            // Hledá se i podle anglického jména („Seven“ v polštině je „Siódemka“)
+            norm: `${API.normalize(name)} ${API.normalize(cleanName(h.search_name))}`,
             icon: img.icon_image_small_webp || img.icon_image_small || img.icon_hero_card_webp || img.icon_hero_card || '',
             card: img.icon_hero_card_webp || img.icon_hero_card || img.icon_image_small_webp || img.icon_image_small || '',
+            // Pozadí hrdiny (velké, jen na jeho stránce) a karta s hrdinou (malá, na stupně vítězů)
             art: img.background_image_webp || img.background_image || img.hero_card_gloat_webp || img.hero_card_gloat
               || img.icon_hero_card_webp || img.icon_hero_card || '',
+            podium: img.hero_card_gloat_webp || img.hero_card_gloat || img.icon_hero_card_webp || img.icon_hero_card || '',
             role: strip(h.description?.role),
             playstyle: strip(h.description?.playstyle),
           };
@@ -131,8 +148,8 @@ const Deadlock = (() => {
   // Anglické názvy itemů – hra může běžet anglicky, i když appka ne (čtení obchodu)
   function getEnglishItemNames() {
     if (lang() === 'english') return getAssets().then(a => new Map(a.items.map(i => [i.id, i.name])));
-    return getJSON(`${BASE}/v1/assets/items?language=english`)
-      .then(j => new Map(list(j).filter(isShopItem).map(i => [i.id, i.name])))
+    return getJSON(assetUrl('items', 'english'))
+      .then(j => new Map(list(j).filter(isShopItem).map(i => [i.id, cleanName(i.name)])))
       .catch(() => new Map());
   }
 
@@ -182,24 +199,39 @@ const Deadlock = (() => {
     });
   }
 
-  // Buildy hráčů ze hry (nejvíc „oblíbených“)
+  // Buildy hráčů ze hry: nejvíc „oblíbených“ z těch, které autor upravil v posledních 4 měsících (starší mají
+  // itemy z dávných patchů). Anglické – nejvíc hráčů, české jsou jen výjimečně.
+  const BUILDS_DAYS = 120;
+  // Název části buildu: výchozí názvy jsou texty hry („#Citadel_HeroBuilds_EarlyGame“), bez názvu jen „|“ a podobně
+  function buildCatName(raw, i) {
+    if (raw.startsWith('#')) {
+      if (/early/i.test(raw)) return t('dl.earlyGame');
+      if (/mid/i.test(raw)) return t('dl.mid');
+      if (/late/i.test(raw)) return t('dl.late');
+    }
+    return !raw.startsWith('#') && /[\p{L}\p{N}]/u.test(raw) ? raw : t('dl.buildPart', { n: i + 1 });
+  }
+  const buildsUrl = (heroId, recent) => `${BASE}/v1/builds?hero_id=${heroId}&sort_by=favorites&sort_direction=desc&limit=8`
+    + `&only_latest=true&build_language=English${recent ? `&min_unix_timestamp=${dayAgo(BUILDS_DAYS)}` : ''}`;
   async function getBuilds(heroId) {
-    const json = await getJSON(`${BASE}/v1/builds?hero_id=${heroId}&sort_by=favorites&sort_direction=desc&limit=8&only_latest=true`);
+    let json = await getJSON(buildsUrl(heroId, true));
+    if (!list(json).length) json = await getJSON(buildsUrl(heroId, false)); // nový hrdina bez čerstvých buildů
     return list(json).map(b => {
       const hb = b.hero_build || b;
-      const cats = (hb.details?.mod_categories || []).map(c => ({
-        name: strip(c.name),
-        ids: (c.mods || []).map(m => m.ability_id).filter(Boolean),
-      })).filter(c => c.ids.length);
+      const cats = (hb.details?.mod_categories || [])
+        .map(c => ({ raw: strip(c.name), ids: (c.mods || []).map(m => m.ability_id).filter(Boolean) }))
+        .filter(c => c.ids.length)
+        .map((c, i) => ({ name: buildCatName(c.raw, i), ids: c.ids }));
       return { name: strip(hb.name), favorites: num(b.num_favorites ?? b.favorites), cats, updated: num(hb.last_updated_timestamp) };
     }).filter(b => b.name && b.cats.length).slice(0, 4);
   }
 
   // ---------- Build: early / mid / late ----------
 
-  // Fáze podle průměrného času nákupu; když ho API nedá, podle tieru itemu (cena)
+  // Fáze podle průměrného času nákupu (early do 11. minuty – lajny, mid do 25.); když ho API nedá, podle tieru
+  // itemu (cena). Tier 1 se v průměru kupuje kolem 8. minuty, tier 2 kolem 15., tier 3 kolem 22., tier 4 po 30.
   function phaseOf(r) {
-    if (r.buy) return r.buy <= 540 ? 'early' : r.buy <= 1320 ? 'mid' : 'late';
+    if (r.buy) return r.buy <= 660 ? 'early' : r.buy <= 1500 ? 'mid' : 'late';
     return r.item.tier <= 2 ? 'early' : r.item.tier === 3 ? 'mid' : 'late';
   }
 
@@ -414,7 +446,7 @@ const Deadlock = (() => {
     rows.forEach((r, i) => (r.pos = i + 1));
 
     $('#podium').innerHTML = needle || rows.length < 3 ? '' : `<div class="podium">${rows.slice(0, 3).map((r, i) => `
-      <a class="podium-card p${i + 1}" href="${heroHref(r.hero)}" style="--splash:url('${r.hero.art}')">
+      <a class="podium-card p${i + 1}" href="${heroHref(r.hero)}" style="--splash:url('${r.hero.podium}')">
         <span class="podium-rank">${i + 1}</span>
         <img class="podium-icon" src="${r.hero.icon}" alt="">
         <span class="podium-text"><b>${esc(r.hero.name)}</b><span class="podium-meta">${tierBadge(r.tier)}</span></span>
@@ -681,10 +713,11 @@ const Deadlock = (() => {
   async function backupUrls() {
     const rank = rankByKey(state.dlRank);
     const urls = [
-      `${BASE}/v1/assets/heroes?language=${lang()}`,
-      `${BASE}/v1/assets/items?language=${lang()}`,
+      assetUrl('heroes'),
+      assetUrl('items'),
       `${BASE}/v1/analytics/hero-stats?min_unix_timestamp=${since()}${rankQ(rank.badge)}`,
     ];
+    if (lang() !== 'english') urls.push(assetUrl('items', 'english')); // čtení obchodu v anglické hře
     if (state.dlHero) {
       urls.push(`${BASE}/v1/analytics/item-stats?hero_id=${state.dlHero}&min_unix_timestamp=${since()}${rankQ(rank.badge)}`);
     }
