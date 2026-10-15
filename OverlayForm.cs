@@ -47,7 +47,8 @@ sealed class OverlayForm : Form
         ["R"] = Color.FromArgb(255, 78, 90),
     };
 
-    sealed record Pic(int Id, string Name, string Url, string Rarity = "");
+    // Step a Note: pořadí nákupu a cena (Deadlock)
+    sealed record Pic(int Id, string Name, string Url, string Rarity = "", int Step = 0, string Note = "");
 
     static readonly Dictionary<string, Color> RarityColors = new()
     {
@@ -59,6 +60,14 @@ sealed class OverlayForm : Form
         ["vitality"] = Color.FromArgb(124, 194, 68),
         ["spirit"] = Color.FromArgb(176, 125, 219),
     };
+    // Deadlock: fáze pořadí nákupu (stejné barvy na stránce hrdiny a u čísel v obchodě) a cena v duších
+    public static readonly Dictionary<string, Color> PhaseColors = new()
+    {
+        ["early"] = Color.FromArgb(62, 224, 160),
+        ["mid"] = Color.FromArgb(242, 193, 78),
+        ["late"] = Color.FromArgb(255, 92, 138),
+    };
+    static readonly Color Souls = Color.FromArgb(127, 214, 194);
 
     sealed class Build
     {
@@ -66,8 +75,8 @@ sealed class OverlayForm : Form
         public string[] Order = [];
         public Dictionary<string, string> SkillIcons = new();
         public List<Pic> Start = [], Core = [], Next = [], Spells = [], Augments = [], Prism = [];
-        // Seznamy s názvy (Deadlock: early / mid / late itemy) – [{label, items}]
-        public List<(string Label, List<Pic> Items)> Lists = [];
+        // Seznamy s názvy (Deadlock: pořadí nákupu po fázích early / mid / late) – [{label, phase, items}]
+        public List<(string Label, string Phase, List<Pic> Items)> Lists = [];
         public Pic? Keystone;
 
         public Build(JsonNode n)
@@ -85,7 +94,7 @@ sealed class OverlayForm : Form
             Augments = Pics(n["augments"]);
             Prism = Pics(n["prism"]);
             foreach (var l in n["lists"]?.AsArray().OfType<JsonNode>() ?? [])
-                Lists.Add((Str(l["label"]), Pics(l["items"])));
+                Lists.Add((Str(l["label"]), Str(l["phase"]), Pics(l["items"])));
             var k = n["keystone"];
             if (k != null) Keystone = new Pic(0, Str(k["name"]), Str(k["icon"]));
         }
@@ -97,7 +106,8 @@ sealed class OverlayForm : Form
 
         static string Str(JsonNode? n) => n is JsonValue v && v.TryGetValue<string>(out var s) ? s : "";
         static List<Pic> Pics(JsonNode? n) => n?.AsArray().OfType<JsonNode>()
-            .Select(p => new Pic(p["id"] is JsonValue v && v.TryGetValue<int>(out var id) ? id : 0, Str(p["name"]), Str(p["icon"]), Str(p["rarity"])))
+            .Select(p => new Pic(p["id"] is JsonValue v && v.TryGetValue<int>(out var id) ? id : 0, Str(p["name"]), Str(p["icon"]), Str(p["rarity"]),
+                p["step"] is JsonValue sv && sv.TryGetValue<int>(out var step) ? step : 0, Str(p["note"])))
             .ToList() ?? [];
     }
 
@@ -397,21 +407,30 @@ sealed class OverlayForm : Form
             y += 6;
         }
 
-        // Seznamy itemů s názvy (Deadlock) – rámeček v barvě typu itemu
-        foreach (var (label, items) in b.Lists)
+        // Pořadí nákupu (Deadlock): číslo kroku v barvě fáze, ikona s rámečkem v barvě typu itemu, název a cena
+        foreach (var (label, phase, items) in b.Lists)
         {
-            DrawText(g, label, fSmall, Muted, pad, y);
+            var pc = PhaseColors.GetValueOrDefault(phase, Muted);
+            DrawText(g, label, fSmall, pc, pad, y);
             y += 17;
             foreach (var it in items)
             {
-                DrawImage(g, it.Url, pad, y, 24, 4);
+                float ix = pad;
+                if (it.Step > 0)
+                {
+                    DrawTextIn(g, it.Step.ToString(), fBold, pc, new RectangleF(pad, y, 22, 24), StringAlignment.Center);
+                    ix += 26;
+                }
+                DrawImage(g, it.Url, ix, y, 24, 4);
                 if (g != null)
                 {
                     using var pen = new Pen(RarityColors.GetValueOrDefault(it.Rarity, Line), 2f);
-                    using var path = Rounded(new RectangleF(pad, y, 24, 24), 4);
+                    using var path = Rounded(new RectangleF(ix, y, 24, 24), 4);
                     g.DrawPath(pen, path);
                 }
-                DrawText(g, it.Name, fText, Fg, pad + 32, y + 4);
+                float noteW = it.Note.Length > 0 && g != null ? g.MeasureString(it.Note, fText).Width : 0;
+                if (noteW > 0) DrawTextIn(g, it.Note, fText, Souls, new RectangleF(w - pad - noteW, y, noteW, 24), StringAlignment.Far);
+                DrawTextIn(g, it.Name, fText, Fg, new RectangleF(ix + 32, y, w - pad - noteW - 6 - (ix + 32), 24), StringAlignment.Near);
                 y += 28;
             }
             y += 6;
@@ -498,6 +517,15 @@ sealed class OverlayForm : Form
         if (g == null || text.Length == 0) return;
         using var brush = new SolidBrush(color);
         g.DrawString(text, font, brush, x, y);
+    }
+
+    // Jeden řádek v obdélníku, svisle na střed; co se nevejde, skončí „…“
+    static void DrawTextIn(Graphics? g, string text, Font font, Color color, RectangleF rect, StringAlignment align)
+    {
+        if (g == null || text.Length == 0 || rect.Width <= 0) return;
+        using var brush = new SolidBrush(color);
+        using var fmt = new StringFormat(StringFormatFlags.NoWrap) { Alignment = align, LineAlignment = StringAlignment.Center, Trimming = StringTrimming.EllipsisCharacter };
+        g.DrawString(text, font, brush, rect, fmt);
     }
 
     static void Separator(Graphics? g, float pad, float y, float w)

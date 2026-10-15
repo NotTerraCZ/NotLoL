@@ -5,9 +5,9 @@ namespace NotLoL;
 
 /// <summary>
 /// Deadlock (Valve): pozná se podle procesu deadlock.exe (starší verze hry project8.exe; hledá se jednou za 5 s).
-/// Rozhraní (deadlock.js) pošle build hrdiny, za kterého hraješ („Hraju za…“; bez něj itemy všech hrdinů) –
-/// overlay ho ukazuje, dokud hra běží – a hodnocení itemů. Po stisku B (obchod) ve hře se chvíli čte obrazovka
-/// a k názvům itemů se přidají štítky; čte se jen tehdy, ať to během hraní nebere výkon.
+/// Rozhraní (deadlock.js) pošle pořadí nákupu pro hrdinu, za kterého hraješ („Hraju za…“; bez něj pro všechny
+/// hrdiny) – overlay ho ukazuje, dokud hra běží. Po stisku B (obchod) ve hře se chvíli čte obrazovka a nad itemy
+/// z pořadí se ukážou čísla kroků; čte se jen tehdy, ať to během hraní nebere výkon.
 /// </summary>
 public sealed partial class MainForm
 {
@@ -21,10 +21,9 @@ public sealed partial class MainForm
 
     readonly ShopScanner shopScanner = new();
     readonly System.Windows.Forms.Timer shopTimer = new() { Interval = 700 };
-    readonly List<AugmentLabelForm> shopLabels = [];
-    // Id itemů jsou 32bitová čísla bez znaménka (3077079169…) – do int se nevejdou
-    Dictionary<long, JsonNode> shopRatings = new();
-    string shopNoData = "";
+    readonly List<ShopStepForm> shopLabels = [];
+    // Pořadí nákupu: id itemu → krok a fáze. Id itemů jsou 32bitová čísla bez znaménka (3077079169…) – do int se nevejdou
+    Dictionary<long, (int Step, string Phase)> shopSteps = new();
     bool shopBusy;
     int shopMisses;
     long shopUntil;
@@ -97,11 +96,11 @@ public sealed partial class MainForm
         }
     }
 
-    // Build a hodnocení itemů od rozhraní (hrdina z „Hraju za…“, jinak všichni hrdinové)
+    // Pořadí nákupu od rozhraní (hrdina z „Hraju za…“, jinak všichni hrdinové)
     void SetDeadlockData(JsonNode msg)
     {
         dlBuild = msg["build"]?.DeepClone();
-        shopRatings = new();
+        shopSteps = new();
         var list = new List<(long, string)>();
         if (msg["shop"] is JsonObject shop)
         {
@@ -111,9 +110,13 @@ public sealed partial class MainForm
                 foreach (var n in arr.Skip(1))
                     if (n is JsonValue v && v.TryGetValue<string>(out var s)) list.Add((id, s));
             }
-            foreach (var (k, v) in shop["ratings"]?.AsObject() ?? new JsonObject())
-                if (long.TryParse(k, out var id) && v != null) shopRatings[id] = v.DeepClone();
-            shopNoData = Str(shop["noData"]);
+            // [[id, krok, fáze], …]
+            foreach (var entry in shop["order"]?.AsArray() ?? new JsonArray())
+            {
+                if (entry is not JsonArray arr || arr.Count < 3 || arr[0] is not JsonValue idv || !idv.TryGetValue<long>(out var id)
+                    || arr[1] is not JsonValue sv || !sv.TryGetValue<int>(out var step)) continue;
+                shopSteps[id] = (step, Str(arr[2]));
+            }
         }
         shopScanner.SetNames(list);
         HideShopLabels();
@@ -140,7 +143,7 @@ public sealed partial class MainForm
         UpdateHotkeys();
     }
 
-    // ---------- Obchod: štítky u itemů ----------
+    // ---------- Obchod: čísla kroků u itemů ----------
 
     void OnShopKey(int vk)
     {
@@ -151,7 +154,7 @@ public sealed partial class MainForm
             EndShopSession();
             return;
         }
-        if (!cardLabelsEnabled || !shopScanner.HasNames) return;
+        if (!cardLabelsEnabled || !shopScanner.HasNames || shopSteps.Count == 0) return;
         shopMisses = 0;
         shopUntil = Environment.TickCount64 + 90_000; // nejdéle minutu a půl, pak zase až po dalším B
         if (!shopTimer.Enabled) shopTimer.Start();
@@ -204,24 +207,20 @@ public sealed partial class MainForm
         return rect.Width > 600 && rect.Height > 400 ? rect : null;
     }
 
+    // Čísla kroků jen u itemů z pořadí nákupu – nad názvem itemu (na spodku jeho ikony). Všechna stejně velká podle
+    // písma v obchodě (medián výšky řádku – OCR občas jeden řádek nafoukne)
     void ShowShopLabels(List<ShopScanner.Found> found)
     {
-        double ScoreOf(long id) => shopRatings.TryGetValue(id, out var v) && v["score"] is JsonValue sv && sv.TryGetValue<double>(out var d) ? d : 0;
-        // Zlatý rámeček: nejlepší item z toho, co je vidět
-        long best = found.Where(f => ScoreOf(f.Id) > 0).OrderByDescending(f => ScoreOf(f.Id)).Select(f => f.Id).FirstOrDefault(-1);
+        var heights = found.Select(f => f.LineHeight).Order().ToList();
+        int s = (int)Math.Clamp(heights[heights.Count / 2] * 1.8f, 20, 40);
         int i = 0;
-        foreach (var f in found.Take(48))
+        foreach (var f in found.Where(f => shopSteps.ContainsKey(f.Id)).OrderBy(f => shopSteps[f.Id].Step).Take(24))
         {
-            if (shopLabels.Count <= i) shopLabels.Add(new AugmentLabelForm());
+            var (step, phase) = shopSteps[f.Id];
+            if (shopLabels.Count <= i) shopLabels.Add(new ShopStepForm());
             var label = shopLabels[i++];
-            shopRatings.TryGetValue(f.Id, out var info);
-            var cls = Str(info?["cls"]);
-            var verdict = Str(info?["verdict"]);
-            label.SetContent(Str(info?["tier"]), cls.Length > 0 ? cls : "none", verdict.Length > 0 ? verdict : shopNoData, Str(info?["stat"]), f.Id == best);
-            // Štítek pod názvem itemu, velikost podle písma
-            int h = (int)Math.Clamp(f.Name.Height * 1.9f, 24, 46);
-            int w = (int)Math.Max(f.Name.Width + h, h * 4.4f);
-            label.Bounds = new Rectangle((int)(f.Name.Left + f.Name.Width / 2 - w / 2f), (int)f.Name.Bottom + 2, w, h);
+            label.SetContent(step, phase);
+            label.Bounds = new Rectangle((int)(f.Name.Left + f.Name.Width / 2 - s / 2f), (int)(f.Name.Top - s - Math.Max(2, s / 8)), s, s);
             if (!label.Visible) label.Show();
             label.KeepOnTop();
         }

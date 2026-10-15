@@ -1541,8 +1541,22 @@ p.more-games { color: var(--muted); }
 .dl-item-stat { display: grid; justify-items: end; gap: 1px; }
 .dl-item-stat b { font: 700 15px/1.1 var(--display); font-variant-numeric: tabular-nums; }
 .dl-item-stat small { color: var(--muted); font-size: 11.5px; white-space: nowrap; }
-.dl-early { border-color: rgba(var(--accent-rgb), .45); }
-.dl-early h2 { font-size: 18px; }
+.dl-order-card { border-color: rgba(var(--accent-rgb), .45); }
+.dl-order-card h2 { font-size: 18px; }
+/* Pořadí nákupu: sloupce early / mid / late, čísla kroků v barvě fáze (stejné barvy jako overlay a obchod) */
+.phase-early { --phase: #3ee0a0; }
+.phase-mid { --phase: #f2c14e; }
+.phase-late { --phase: #ff5c8a; }
+.dl-order { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; }
+.dl-order-col { display: grid; gap: 8px; align-content: start; }
+.dl-order-col h3 { margin: 0; color: var(--phase); font: 700 12px/1.2 var(--display); text-transform: uppercase; letter-spacing: .08em; }
+.dl-order .dl-items { grid-template-columns: minmax(0, 1fr); }
+.dl-step {
+  display: grid; place-items: center; width: 26px; height: 26px;
+  color: #0d0b12; background: var(--phase); font: 700 14px/1 var(--display); font-variant-numeric: tabular-nums;
+  clip-path: polygon(6px 0, 100% 0, 100% calc(100% - 6px), calc(100% - 6px) 100%, 0 100%, 0 6px);
+}
+@media (max-width: 1100px) { .dl-order { grid-template-columns: minmax(0, 1fr); } }
 .dl-tier-card { margin-bottom: 16px; }
 .dl-tier-card h2 { gap: 12px; }
 .dl-tier-card h2 .souls { font: 700 14px/1 var(--display); }

@@ -15,7 +15,7 @@
     <Product>NotLoL</Product>
     <Description>League of Legends tier list a buildy z dat u.gg</Description>
     <!-- Verze pro lokální build; vydání přes GitHub Actions ji přepíše verzí z tagu (v1.2.3 → 1.2.3) -->
-    <Version>1.7.1</Version>
+    <Version>1.7.2</Version>
 
     <!-- Jeden .exe soubor (potřebuje .NET 10 Desktop Runtime). Instalátor a aktualizace balí Velopack (vpk). -->
     <RuntimeIdentifier>win-x64</RuntimeIdentifier>

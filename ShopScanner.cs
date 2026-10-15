@@ -11,8 +11,8 @@ namespace NotLoL;
 /// </summary>
 sealed class ShopScanner
 {
-    /// <summary>Nalezený item: id a obdélník jeho názvu v souřadnicích obrazovky.</summary>
-    public sealed record Found(long Id, RectangleF Name, double Score);
+    /// <summary>Nalezený item: id, obdélník jeho názvu v souřadnicích obrazovky (i dvouřádkového) a výška jednoho řádku.</summary>
+    public sealed record Found(long Id, RectangleF Name, double Score, float LineHeight);
 
     readonly Dictionary<string, long> exact = new();
     readonly List<(string norm, long id)> names = new();
@@ -98,15 +98,15 @@ sealed class ShopScanner
 
         // Kandidáti: úseky + dvojice pod sebou (dlouhý název na dva řádky); každý item jen jednou (nejjistější)
         var best = new Dictionary<long, Found>();
-        void Add(string norm, RectangleF rect)
+        void Add(string norm, RectangleF rect, float lineHeight)
         {
             var (id, score) = Match(norm);
             if (id < 0) return;
-            if (!best.TryGetValue(id, out var old) || score > old.Score) best[id] = new Found(id, rect, score);
+            if (!best.TryGetValue(id, out var old) || score > old.Score) best[id] = new Found(id, rect, score, lineHeight);
         }
         for (int i = 0; i < segs.Count; i++)
         {
-            Add(segs[i].norm, segs[i].rect);
+            Add(segs[i].norm, segs[i].rect, segs[i].rect.Height);
             for (int j = 0; j < segs.Count; j++)
             {
                 if (j == i) continue;
@@ -114,7 +114,7 @@ sealed class ShopScanner
                 float lh = Math.Max(ra.Height, rb.Height);
                 bool below = rb.Top > ra.Top && rb.Top - ra.Bottom < lh * 0.9f;
                 bool aligned = Math.Abs((ra.Left + ra.Right) / 2 - (rb.Left + rb.Right) / 2) < Math.Max(ra.Width, rb.Width) * 0.6f;
-                if (below && aligned) Add(segs[i].norm + segs[j].norm, RectangleF.Union(ra, rb));
+                if (below && aligned) Add(segs[i].norm + segs[j].norm, RectangleF.Union(ra, rb), lh);
             }
         }
 
