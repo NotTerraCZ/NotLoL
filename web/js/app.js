@@ -7,7 +7,7 @@ const view = $('#view');
 
 const PREFS_KEY = 'notlol.prefs.v1';
 const PREF_FIELDS = ['region', 'rank', 'queue', 'role', 'showAll', 'layout', 'sortKey', 'sortDir',
-  'autoOpen', 'autoImport', 'overlay', 'cardLabels', 'accent', 'motion', 'hotkeys', 'look', 'game', 'dlRank', 'dlHero'];
+  'autoOpen', 'autoImport', 'overlay', 'cardLabels', 'accent', 'motion', 'hotkeys', 'look'];
 const MIN_PICK = 0.005;
 
 const state = Object.assign(
@@ -16,9 +16,7 @@ const state = Object.assign(
     // Desktop: napojení na LoL klient
     autoOpen: true, autoImport: false, overlay: true, cardLabels: true, hotkeys: {},
     // Vzhled (look = verze vzhledu, kvůli jednorázovému přechodu na nový)
-    accent: 'red', motion: true, look: 2,
-    // Hra v boční liště a Deadlock: minimální rank statistik, hrdina, za kterého hraješ
-    game: 'lol', dlRank: 'all', dlHero: null },
+    accent: 'red', motion: true, look: 2 },
   loadPrefs(),
 );
 savePrefs(); // uloží případný přechod na nový vzhled (čte ho i herní panel)
@@ -118,22 +116,19 @@ const champMatches = (c, needle) => c.norm.includes(needle) || c.alt?.includes(n
 const footerText = () => t('footer', {
   ugg: '<a href="https://u.gg" target="_blank" rel="noopener">u.gg</a>',
   opgg: '<a href="https://op.gg/lol/modes/arena" target="_blank" rel="noopener">OP.GG</a>',
-  dl: '<a href="https://deadlock-api.com" target="_blank" rel="noopener">deadlock-api.com</a>',
 });
 
 const loadingBlock = (text = t('loading')) => `<div class="state"><div class="spinner"></div><p>${esc(text)}</p></div>`;
 function errorBlock(err) {
   let msg = t('err.generic');
-  if (err instanceof API.HttpError && (err.status === 403 || err.status === 404)) {
-    msg = String(err.url).includes('deadlock-api') ? t('dl.errMissing') : t('err.missing');
-  }
+  if (err instanceof API.HttpError && (err.status === 403 || err.status === 404)) msg = t('err.missing');
   else if (err instanceof TypeError) msg = t('err.offline');
   else if (err?.message) msg = err.message;
   return `<div class="state error">${icon('alert', 28)}<p>${esc(msg)}</p><button class="btn" data-action="retry">${icon('refresh', 16)}${t('retry')}</button></div>`;
 }
 view.addEventListener('click', e => {
   if (!e.target.closest('[data-action="retry"]')) return;
-  if (state.patch || state.game === 'deadlock') route();
+  if (state.patch) route();
   else location.reload();
 });
 
@@ -181,24 +176,10 @@ function patchNote(q, requested, used) {
 
 // ---------- Router ----------
 
-const routeParts = () => (location.hash.replace(/^#\/?/, '') || '').split('/').filter(Boolean);
-// Stránka Deadlocku (#/dl/…), nebo úvodní stránka, když je v boční liště vybraný Deadlock
-const isDeadlockRoute = (parts = routeParts()) => parts[0] === 'dl' || (!parts.length && state.game === 'deadlock');
-
 function route() {
-  const parts = routeParts();
+  const parts = (location.hash.replace(/^#\/?/, '') || '').split('/').filter(Boolean);
   window.scrollTo(0, 0);
   if (parts[0] === 'settings') return Settings.render();
-  if (isDeadlockRoute(parts)) {
-    setGame('deadlock', false);
-    return Deadlock.route(parts[0] === 'dl' ? parts.slice(1) : []);
-  }
-  setGame('lol', false);
-  // Stránky LoL potřebují patch – při startu se ještě může načítat
-  if (!state.patch) {
-    view.innerHTML = patchError ? errorBlock(patchError) : loadingBlock(t('loading.patch'));
-    return;
-  }
   if (parts[0] === 'players') return Players.renderSearchPage();
   if (parts[0] === 'compare') {
     return Compare.render(parts.slice(1).map(x => {
@@ -212,38 +193,6 @@ function route() {
   if (parts[0] === 'champ' && parts[1]) renderChampPage(decodeURIComponent(parts[1]), parts[2]);
   else renderTierPage();
 }
-
-// ---------- Hry v boční liště (League of Legends / Deadlock) ----------
-
-const GAMES = {
-  lol: [['tier', '#/', 'tier', 'nav.tier'], ['players', '#/players', 'users', 'nav.players']],
-  deadlock: [['dl-heroes', '#/dl', 'tier', 'nav.dlHeroes'], ['dl-items', '#/dl/items', 'grid', 'nav.dlItems']],
-};
-let navGame = null;
-
-// navigate = přejít na úvodní stránku hry (klik v boční liště, spuštěná hra); router ne – ten už stránku zná
-function setGame(game, navigate = true) {
-  if (!GAMES[game]) return;
-  const changed = state.game !== game;
-  if (changed) {
-    state.game = game;
-    savePrefs();
-  }
-  if (navGame !== game) {
-    navGame = game;
-    document.body.dataset.game = game;
-    document.querySelectorAll('.game-btn[data-game]').forEach(b => b.classList.toggle('on', b.dataset.game === game));
-    $('#nav').innerHTML = [...GAMES[game], ['settings', '#/settings', 'settings', 'nav.settings']]
-      .map(([key, href, ic, label]) => `<a href="${href}" data-nav="${key}">${icon(ic, 17)}<span>${t(label)}</span></a>`).join('');
-    $('#globalSearch').placeholder = t(game === 'deadlock' ? 'search.dl' : 'search.placeholder');
-  }
-  // V Nastavení zůstat (hra se třeba zapnula, zatímco v nich něco měníš)
-  if (changed && navigate && routeParts()[0] !== 'settings') location.hash = game === 'deadlock' ? '#/dl' : '#/';
-}
-document.querySelectorAll('.game-btn[data-game]').forEach(b => b.addEventListener('click', () => {
-  if (state.game === b.dataset.game) location.hash = b.dataset.game === 'deadlock' ? '#/dl' : '#/';
-  else setGame(b.dataset.game);
-}));
 
 // ---------- Tier list ----------
 
@@ -881,13 +830,6 @@ function initSearch() {
     if (!c) return;
     input.value = '';
     close();
-    if (c.href) {
-      // Deadlock: hrdina, nebo item (přehled itemů s filtrem – může to být už otevřená stránka)
-      if (c.item) Deadlock.openItem(c.item);
-      if (location.hash === c.href) route();
-      else location.hash = c.href;
-      return;
-    }
     location.hash = c.player ? Players.playerHref(c.gameName, c.tagLine) : champHref(c);
   };
   const paint = () => {
@@ -895,7 +837,7 @@ function initSearch() {
       ? `<button class="sr ${i === active ? 'on' : ''}" data-i="${i}">
           <span class="sr-player">${icon('user', 16)}</span><span>${esc(c.gameName)}<small class="tag">#${esc(c.tagLine)}</small></span><small>${t('search.player')}</small></button>`
       : `<button class="sr ${i === active ? 'on' : ''}" data-i="${i}">
-          <img src="${c.icon}" alt=""><span>${esc(c.name)}</span><small>${esc(c.title ?? c.sub)}</small></button>`).join('')
+          <img src="${c.icon}" alt=""><span>${esc(c.name)}</span><small>${esc(c.title)}</small></button>`).join('')
       || `<p class="sr-empty">${t('search.none')}</p>`;
     box.hidden = false;
   };
@@ -904,14 +846,6 @@ function initSearch() {
     const raw = input.value;
     const q = API.normalize(raw);
     if (!q) return close();
-    if (state.game === 'deadlock') {
-      const found = await Deadlock.search(q).catch(() => []);
-      if (input.value !== raw) return;
-      results = found;
-      active = 0;
-      paint();
-      return;
-    }
     // Riot ID (Jméno#TAG) = hledání hráče
     const riotId = Players.parseRiotId(raw);
     const st = await API.getStatic(state.patch).catch(() => null);
@@ -1006,26 +940,26 @@ function initChrome() {
   Players.renderMeChip();
 }
 
-// Patche LoL (u.gg) – stránky LoL na ně čekají, Deadlock ne
-let patchError = null;
-async function loadPatches() {
+async function init() {
+  initChrome();
+  view.innerHTML = loadingBlock(t('loading.patch'));
   try {
     allPatches = await API.getPatches();
     patches = allPatches.slice(0, 8);
     if (!patches.length) throw new Error(t('err.noPatches'));
-    state.patch = await pickDefaultPatch();
-    const sel = $('#patchSelect');
-    sel.innerHTML = patches.map(p => `<option value="${p}" ${p === state.patch ? 'selected' : ''}>${API.patchLabel(p)}</option>`).join('');
-    sel.addEventListener('change', () => setPatch(sel.value));
   } catch (err) {
-    patchError = err;
+    view.innerHTML = errorBlock(err);
+    Desktop.init();
+    return;
   }
-}
+  state.patch = await pickDefaultPatch();
 
-async function init() {
-  initChrome();
-  setGame(GAMES[state.game] ? state.game : 'lol', false);
+  const sel = $('#patchSelect');
+  sel.innerHTML = patches.map(p => `<option value="${p}" ${p === state.patch ? 'selected' : ''}>${API.patchLabel(p)}</option>`).join('');
+  sel.addEventListener('change', () => setPatch(sel.value));
+
   initSearch();
+  Desktop.init();
   // Boční tlačítka myši = zpět / vpřed
   window.addEventListener('mouseup', e => {
     if (e.button !== 3 && e.button !== 4) return;
@@ -1035,9 +969,6 @@ async function init() {
   });
   window.addEventListener('hashchange', route);
   route();
-  await loadPatches();
-  Desktop.init();
-  if (!isDeadlockRoute()) route();
 }
 
 init();
