@@ -47,27 +47,14 @@ sealed class OverlayForm : Form
         ["R"] = Color.FromArgb(255, 78, 90),
     };
 
-    // Step, Note a Tier: pořadí nákupu, cena a tier itemu pro hrdinu (Deadlock; TierCls = barva jako v rozhraní)
-    sealed record Pic(int Id, string Name, string Url, string Rarity = "", int Step = 0, string Note = "", string Tier = "", string TierCls = "");
+    sealed record Pic(int Id, string Name, string Url, string Rarity = "");
 
     static readonly Dictionary<string, Color> RarityColors = new()
     {
         ["kPrismatic"] = Color.FromArgb(197, 139, 255),
         ["kGold"] = Color.FromArgb(242, 193, 78),
         ["kSilver"] = Color.FromArgb(183, 189, 207),
-        // Deadlock: typ itemu (zbraň, vitalita, duch)
-        ["weapon"] = Color.FromArgb(232, 145, 60),
-        ["vitality"] = Color.FromArgb(124, 194, 68),
-        ["spirit"] = Color.FromArgb(176, 125, 219),
     };
-    // Deadlock: fáze pořadí nákupu (stejné barvy na stránce hrdiny a u čísel v obchodě) a cena v duších
-    public static readonly Dictionary<string, Color> PhaseColors = new()
-    {
-        ["early"] = Color.FromArgb(62, 224, 160),
-        ["mid"] = Color.FromArgb(242, 193, 78),
-        ["late"] = Color.FromArgb(255, 92, 138),
-    };
-    static readonly Color Souls = Color.FromArgb(127, 214, 194);
 
     sealed class Build
     {
@@ -75,8 +62,6 @@ sealed class OverlayForm : Form
         public string[] Order = [];
         public Dictionary<string, string> SkillIcons = new();
         public List<Pic> Start = [], Core = [], Next = [], Spells = [], Augments = [], Prism = [];
-        // Seznamy s názvy (Deadlock: pořadí nákupu po fázích early / mid / late) – [{label, phase, items}]
-        public List<(string Label, string Phase, List<Pic> Items)> Lists = [];
         public Pic? Keystone;
 
         public Build(JsonNode n)
@@ -93,21 +78,18 @@ sealed class OverlayForm : Form
             Spells = Pics(n["spells"]);
             Augments = Pics(n["augments"]);
             Prism = Pics(n["prism"]);
-            foreach (var l in n["lists"]?.AsArray().OfType<JsonNode>() ?? [])
-                Lists.Add((Str(l["label"]), Str(l["phase"]), Pics(l["items"])));
             var k = n["keystone"];
             if (k != null) Keystone = new Pic(0, Str(k["name"]), Str(k["icon"]));
         }
 
         public IEnumerable<string> Urls() =>
             new[] { Icon, Keystone?.Url ?? "" }.Concat(SkillIcons.Values)
-                .Concat(Start.Concat(Core).Concat(Next).Concat(Spells).Concat(Augments).Concat(Prism).Concat(Lists.SelectMany(l => l.Items)).Select(p => p.Url))
+                .Concat(Start.Concat(Core).Concat(Next).Concat(Spells).Concat(Augments).Concat(Prism).Select(p => p.Url))
                 .Where(u => u.Length > 0).Distinct();
 
         static string Str(JsonNode? n) => n is JsonValue v && v.TryGetValue<string>(out var s) ? s : "";
         static List<Pic> Pics(JsonNode? n) => n?.AsArray().OfType<JsonNode>()
-            .Select(p => new Pic(p["id"] is JsonValue v && v.TryGetValue<int>(out var id) ? id : 0, Str(p["name"]), Str(p["icon"]), Str(p["rarity"]),
-                p["step"] is JsonValue sv && sv.TryGetValue<int>(out var step) ? step : 0, Str(p["note"]), Str(p["tier"]), Str(p["cls"])))
+            .Select(p => new Pic(p["id"] is JsonValue v && v.TryGetValue<int>(out var id) ? id : 0, Str(p["name"]), Str(p["icon"]), Str(p["rarity"])))
             .ToList() ?? [];
     }
 
@@ -407,54 +389,6 @@ sealed class OverlayForm : Form
             y += 6;
         }
 
-        // Pořadí nákupu (Deadlock): číslo kroku v barvě fáze, ikona s rámečkem v barvě typu itemu, název a cena
-        foreach (var (label, phase, items) in b.Lists)
-        {
-            var pc = PhaseColors.GetValueOrDefault(phase, Muted);
-            DrawText(g, label, fSmall, pc, pad, y);
-            y += 17;
-            foreach (var it in items)
-            {
-                float ix = pad;
-                if (it.Step > 0)
-                {
-                    DrawTextIn(g, it.Step.ToString(), fBold, pc, new RectangleF(pad, y, 22, 24), StringAlignment.Center);
-                    ix += 26;
-                }
-                DrawImage(g, it.Url, ix, y, 24, 4);
-                if (g != null)
-                {
-                    using var pen = new Pen(RarityColors.GetValueOrDefault(it.Rarity, Line), 2f);
-                    using var path = Rounded(new RectangleF(ix, y, 24, 24), 4);
-                    g.DrawPath(pen, path);
-                }
-                // Vpravo cena a před ní tier
-                float right = w - pad;
-                float noteW = it.Note.Length > 0 && g != null ? g.MeasureString(it.Note, fText).Width : 0;
-                if (noteW > 0)
-                {
-                    DrawTextIn(g, it.Note, fText, Souls, new RectangleF(right - noteW, y, noteW, 24), StringAlignment.Far);
-                    right -= noteW + 6;
-                }
-                if (it.Tier.Length > 0)
-                {
-                    var tc = AugmentLabelForm.TierColors.GetValueOrDefault(it.TierCls, Muted);
-                    var badge = new RectangleF(right - 24, y + 4, 24, 16);
-                    if (g != null)
-                    {
-                        using var brush = new SolidBrush(tc);
-                        using var path = Rounded(badge, 3);
-                        g.FillPath(brush, path);
-                    }
-                    DrawTextIn(g, it.Tier, fSmall, Ink, badge, StringAlignment.Center);
-                    right -= 24 + 6;
-                }
-                DrawTextIn(g, it.Name, fText, Fg, new RectangleF(ix + 32, y, right - (ix + 32), 24), StringAlignment.Near);
-                y += 28;
-            }
-            y += 6;
-        }
-
         // Itemy
         bool early = live == null || live.GameTime < 150;
         if (early && b.Start.Count > 0) y = ItemRow(g, Loc.T("ovStart", "START"), b.Start, pad, y, 28, fSmall);
@@ -536,15 +470,6 @@ sealed class OverlayForm : Form
         if (g == null || text.Length == 0) return;
         using var brush = new SolidBrush(color);
         g.DrawString(text, font, brush, x, y);
-    }
-
-    // Jeden řádek v obdélníku, svisle na střed; co se nevejde, skončí „…“
-    static void DrawTextIn(Graphics? g, string text, Font font, Color color, RectangleF rect, StringAlignment align)
-    {
-        if (g == null || text.Length == 0 || rect.Width <= 0) return;
-        using var brush = new SolidBrush(color);
-        using var fmt = new StringFormat(StringFormatFlags.NoWrap) { Alignment = align, LineAlignment = StringAlignment.Center, Trimming = StringTrimming.EllipsisCharacter };
-        g.DrawString(text, font, brush, rect, fmt);
     }
 
     static void Separator(Graphics? g, float pad, float y, float w)

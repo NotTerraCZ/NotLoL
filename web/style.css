@@ -172,47 +172,6 @@ button, select, input { font: inherit; color: inherit; }
 /* Nastavení dole, jako v prohlížeči */
 .nav a[data-nav="settings"] { margin-top: auto; }
 
-/* Hry (League of Legends / Deadlock) – pod logem, jako aplikace v boční liště prohlížeče */
-.games { display: flex; flex-direction: column; align-items: center; gap: 4px; width: 100%; padding: 2px 0 12px; border-bottom: 1px solid var(--line); }
-.game-btn {
-  position: relative;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 3px;
-  width: 66px;
-  padding: 6px 2px 5px;
-  background: none;
-  border: 0;
-  border-radius: 6px;
-  color: var(--dim);
-  font: 600 9.5px/1.1 var(--display);
-  text-transform: uppercase;
-  letter-spacing: .04em;
-  cursor: pointer;
-  transition: color .15s, background .15s;
-}
-.game-btn svg { width: 32px; height: 32px; filter: grayscale(.85) brightness(.75); transition: filter .15s, transform .15s; }
-.game-btn:hover { color: var(--text); background: rgba(255, 255, 255, .045); }
-.game-btn:hover svg { filter: none; }
-.game-btn.on { color: var(--text); background: rgba(var(--accent-rgb), .1); }
-.game-btn.on svg { filter: drop-shadow(0 0 8px rgba(var(--accent-rgb), .55)); transform: scale(1.04); }
-.game-btn.on::before {
-  content: '';
-  position: absolute;
-  left: -5px;
-  top: 8px;
-  bottom: 8px;
-  width: 3px;
-  border-radius: 0 2px 2px 0;
-  background: var(--accent);
-  box-shadow: 0 0 10px rgba(var(--accent-rgb), .9);
-}
-/* Deadlock: lišta bez věcí, které patří k LoL (patch u.gg, LoL klient, profil) */
-body[data-game="deadlock"] .patch,
-body[data-game="deadlock"] .client-chip,
-body[data-game="deadlock"] .me-chip { display: none; }
-
 /* ---------- Horní lišta ---------- */
 
 .topbar {
@@ -1507,76 +1466,6 @@ p.more-games { color: var(--muted); }
 .set-card .me-card { margin-bottom: 0; }
 .about p { margin: 0; font-size: 13px; }
 
-/* ---------- Deadlock ---------- */
-
-:root { --weapon: #e8913c; --vitality: #7cc244; --spirit: #b07ddb; }
-.slot-weapon { --slot: var(--weapon); }
-.slot-vitality { --slot: var(--vitality); }
-.slot-spirit { --slot: var(--spirit); }
-.slot-all { --slot: var(--muted); }
-.souls { display: inline-flex; align-items: center; gap: 3px; color: #7fd6c2; font-weight: 700; font-variant-numeric: tabular-nums; }
-.souls::before { content: ''; width: 8px; height: 8px; transform: rotate(45deg); background: #7fd6c2; box-shadow: 0 0 6px rgba(127, 214, 194, .7); }
-.dl-ico { width: 40px; height: 40px; flex: 0 0 auto; object-fit: contain; padding: 3px; border-radius: 4px; border: 2px solid var(--slot, var(--line-2));
-  background: radial-gradient(circle at 50% 30%, color-mix(in srgb, var(--slot, var(--muted)) 30%, #15111b), #0e0b13 75%); }
-.dl-ico.sm { width: 30px; height: 30px; padding: 2px; border-width: 1.5px; }
-.dl-items { display: grid; grid-template-columns: repeat(auto-fill, minmax(330px, 1fr)); gap: 8px; }
-.card:not(.card-wide):not(.dl-tier-card) .dl-items { grid-template-columns: minmax(0, 1fr); }
-.dl-item {
-  position: relative;
-  display: grid;
-  grid-template-columns: auto auto minmax(0, 1fr) auto;
-  align-items: center;
-  gap: 10px;
-  padding: 8px 10px;
-  border-radius: 4px;
-  background: linear-gradient(90deg, color-mix(in srgb, var(--slot) 13%, var(--bg-2)), var(--bg-2) 60%);
-  border-left: 3px solid var(--slot);
-}
-.dl-items.cols .dl-item { grid-template-columns: auto minmax(0, 1fr) auto; }
-.dl-rank { color: var(--dim); font: 700 13px/1 var(--display); width: 14px; text-align: center; }
-.dl-item:nth-child(-n + 3) .dl-rank { color: var(--accent-2); }
-.dl-item-text { display: grid; gap: 2px; min-width: 0; }
-.dl-item-text b { font-size: 14px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.dl-item-text small { display: flex; align-items: center; gap: 4px; min-width: 0; overflow: hidden; color: var(--muted); font-size: 12px; white-space: nowrap; }
-.dl-item-stat { display: grid; justify-items: end; gap: 1px; }
-.dl-item-stat b { font: 700 15px/1.1 var(--display); font-variant-numeric: tabular-nums; }
-.dl-item-stat small { color: var(--muted); font-size: 11.5px; white-space: nowrap; }
-.dl-order-card { border-color: rgba(var(--accent-rgb), .45); }
-.dl-order-card h2 { font-size: 18px; }
-/* Pořadí nákupu: sloupce early / mid / late, čísla kroků v barvě fáze (stejné barvy jako overlay a obchod) */
-.phase-early { --phase: #3ee0a0; }
-.phase-mid { --phase: #f2c14e; }
-.phase-late { --phase: #ff5c8a; }
-.dl-order { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; }
-.dl-order-col { display: grid; gap: 8px; align-content: start; }
-.dl-order-col h3 { margin: 0; color: var(--phase); font: 700 12px/1.2 var(--display); text-transform: uppercase; letter-spacing: .08em; }
-.dl-order .dl-items { grid-template-columns: minmax(0, 1fr); }
-.dl-order .dl-item { grid-template-columns: auto auto minmax(0, 1fr) auto auto; }
-.dl-step {
-  display: grid; place-items: center; width: 26px; height: 26px;
-  color: #0d0b12; background: var(--phase); font: 700 14px/1 var(--display); font-variant-numeric: tabular-nums;
-  clip-path: polygon(6px 0, 100% 0, 100% calc(100% - 6px), calc(100% - 6px) 100%, 0 100%, 0 6px);
-}
-@media (max-width: 1100px) { .dl-order { grid-template-columns: minmax(0, 1fr); } }
-.dl-tier-card { margin-bottom: 16px; }
-.dl-tier-card h2 { gap: 12px; }
-.dl-tier-card h2 .souls { font: 700 14px/1 var(--display); }
-.dl-builds { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 12px; }
-.dl-build { display: grid; gap: 8px; align-content: start; padding: 12px; border-radius: 4px; background: var(--bg-2); border: 1px solid var(--line); }
-.dl-build-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
-.dl-build-head b { font-size: 14px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.dl-build-head small { display: inline-flex; align-items: center; gap: 4px; color: #f2c14e; font-weight: 700; font-variant-numeric: tabular-nums; }
-.dl-build-cat { display: grid; gap: 4px; }
-.dl-build-cat > small { color: var(--dim); font: 700 10.5px/1.2 var(--display); text-transform: uppercase; letter-spacing: .08em; }
-.dl-build .icon-row { gap: 4px; }
-.dl-playing { align-items: center; }
-.dl-playing img { width: 34px; height: 34px; border-radius: 4px; }
-.dl-playing p b { color: var(--text); }
-.dl-play { margin-top: 2px; }
-.slot-btn i { width: 10px; height: 10px; transform: rotate(45deg); background: var(--slot); box-shadow: 0 0 8px var(--slot); }
-.slot-btn.on { border-color: var(--slot); background: color-mix(in srgb, var(--slot) 16%, transparent); box-shadow: none; }
-.dl-page .hero .portrait { object-fit: cover; object-position: top; background: #120f18; }
-
 /* ---------- Responzivita ---------- */
 
 @media (max-width: 1180px) {
@@ -1605,8 +1494,7 @@ p.more-games { color: var(--muted); }
   :root { --gutter: 16px; --topbar-h: 112px; --side-w: 58px; }
   .logo { width: 38px; height: 38px; }
   .nav a { width: 46px; padding: 10px 0; }
-  .nav a span, .game-btn span { display: none; }
-  .game-btn { width: 46px; }
+  .nav a span { display: none; }
   .topbar-inner { flex-wrap: wrap; gap: 10px; height: auto; padding-top: 10px; padding-bottom: 10px; }
   .search { order: 3; flex-basis: 100%; max-width: none; }
   .patch > span { display: none; }
