@@ -13,7 +13,7 @@ sealed class AugmentLabelForm : Form
     static readonly Color Fg = Color.FromArgb(242, 240, 247);
     static readonly Color Muted = Color.FromArgb(155, 147, 172);
     static readonly Color Gold = Color.FromArgb(240, 200, 100);
-    static readonly Dictionary<string, Color> TierColors = new()
+    internal static readonly Dictionary<string, Color> TierColors = new() // i tier itemů v overlayi (Deadlock)
     {
         ["splus"] = Color.FromArgb(255, 78, 90),
         ["s"] = Color.FromArgb(255, 154, 60),

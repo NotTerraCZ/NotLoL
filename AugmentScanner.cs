@@ -223,7 +223,7 @@ sealed class AugmentScanner
         return sb.ToString();
     }
 
-    internal static int Levenshtein(string a, string b)
+    static int Levenshtein(string a, string b)
     {
         var prev = new int[b.Length + 1];
         var cur = new int[b.Length + 1];
@@ -238,7 +238,7 @@ sealed class AugmentScanner
         return prev[b.Length];
     }
 
-    internal static SoftwareBitmap ToSoftwareBitmap(Bitmap bmp)
+    static SoftwareBitmap ToSoftwareBitmap(Bitmap bmp)
     {
         var data = bmp.LockBits(new Rectangle(0, 0, bmp.Width, bmp.Height), ImageLockMode.ReadOnly, PixelFormat.Format32bppPArgb);
         try
