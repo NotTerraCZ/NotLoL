@@ -12,15 +12,15 @@ namespace NotLoL;
 sealed class ShopScanner
 {
     /// <summary>Nalezený item: id a obdélník jeho názvu v souřadnicích obrazovky.</summary>
-    public sealed record Found(int Id, RectangleF Name, double Score);
+    public sealed record Found(long Id, RectangleF Name, double Score);
 
-    readonly Dictionary<string, int> exact = new();
-    readonly List<(string norm, int id)> names = new();
+    readonly Dictionary<string, long> exact = new();
+    readonly List<(string norm, long id)> names = new();
     OcrEngine? engine;
 
     public bool HasNames => names.Count > 0;
 
-    public void SetNames(IEnumerable<(int id, string name)> list)
+    public void SetNames(IEnumerable<(long id, string name)> list)
     {
         exact.Clear();
         names.Clear();
@@ -97,7 +97,7 @@ sealed class ShopScanner
         }
 
         // Kandidáti: úseky + dvojice pod sebou (dlouhý název na dva řádky); každý item jen jednou (nejjistější)
-        var best = new Dictionary<int, Found>();
+        var best = new Dictionary<long, Found>();
         void Add(string norm, RectangleF rect)
         {
             var (id, score) = Match(norm);
@@ -125,12 +125,12 @@ sealed class ShopScanner
         return found.Count == 0 ? null : found;
     }
 
-    (int id, double score) Match(string norm)
+    (long id, double score) Match(string norm)
     {
         if (norm.Length < 3) return (-1, 0);
         if (exact.TryGetValue(norm, out var e)) return (e, 1);
         if (norm.Length < 5) return (-1, 0);
-        int id = -1;
+        long id = -1;
         double score = 0;
         foreach (var (n, nid) in names)
         {

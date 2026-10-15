@@ -100,6 +100,7 @@ const Deadlock = (() => {
       tier: num(i.item_tier),
       cost: num(i.cost),
       icon: i.shop_image_small || i.shop_image_webp || i.shop_image || i.image_webp || i.image || '',
+      png: i.shop_image || i.image || '', // overlay (Windows) WebP nenačte
       active: !!i.is_active_item,
     };
   }
@@ -122,6 +123,7 @@ const Deadlock = (() => {
             // Hledá se i podle anglického jména („Seven“ v polštině je „Siódemka“)
             norm: `${API.normalize(name)} ${API.normalize(cleanName(h.search_name))}`,
             icon: img.icon_image_small_webp || img.icon_image_small || img.icon_hero_card_webp || img.icon_hero_card || '',
+            png: img.icon_image_small || img.icon_hero_card || '', // overlay (Windows) WebP nenačte
             card: img.icon_hero_card_webp || img.icon_hero_card || img.icon_image_small_webp || img.icon_image_small || '',
             // Pozadí hrdiny (velké, jen na jeho stránce) a karta s hrdinou (malá, na stupně vítězů)
             art: img.background_image_webp || img.background_image || img.hero_card_gloat_webp || img.hero_card_gloat
@@ -284,23 +286,23 @@ const Deadlock = (() => {
 
   const nameList = (items, english) => items.map(i => [i.id, i.name, english.get(i.id) || i.name]);
 
+  // Bez vybraného hrdiny (nebo když ho API nezná) itemy všech hrdinů – overlay i štítky v obchodě fungují i tak
   async function inGamePayload(heroId) {
-    if (!heroId) return { build: null, shop: null };
     const rank = rankByKey(state.dlRank);
     const { rows: heroRows, assets } = await getHeroRows(rank);
-    const hero = assets.heroById.get(heroId);
-    if (!hero) return { build: null, shop: null };
-    const heroRow = heroRows.find(r => r.hero.id === heroId);
+    const hero = heroId ? assets.heroById.get(heroId) : null;
+    const heroRow = hero ? heroRows.find(r => r.hero.id === hero.id) : null;
+    const base = hero ? heroRow?.matches : heroRows.reduce((s, r) => s + r.matches, 0);
     const [rows, english] = await Promise.all([
-      getItemRows(heroId, rank, heroRow?.matches).catch(() => []),
+      getItemRows(hero ? hero.id : null, rank, base).catch(() => []),
       getEnglishItemNames(),
     ]);
     const phases = buildPhases(rows, heroRow?.wr || 0.5);
-    const pic = r => ({ id: r.item.id, name: r.item.name, icon: r.item.icon, rarity: r.item.slot });
+    const pic = r => ({ id: r.item.id, name: r.item.name, icon: r.item.png, rarity: r.item.slot });
     return {
       build: {
-        champion: { name: hero.name, icon: hero.icon },
-        subtitle: `Deadlock · ${rankLabel(rank)}`,
+        champion: hero ? { name: hero.name, icon: hero.png } : { name: t('dl.ov.anyHero'), icon: '' },
+        subtitle: hero ? `Deadlock · ${rankLabel(rank)}` : t('dl.ov.pickHero'),
         lists: [
           { label: t('dl.ov.early'), items: phases.early.slice(0, 5).map(pic) },
           { label: t('dl.ov.mid'), items: phases.mid.slice(0, 4).map(pic) },

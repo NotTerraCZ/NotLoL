@@ -4,14 +4,14 @@ using System.Text.Json.Nodes;
 namespace NotLoL;
 
 /// <summary>
-/// Deadlock (Valve): pozná se podle procesu project8.exe (hledá se jednou za 5 s). Rozhraní (deadlock.js) pošle
-/// build hrdiny, za kterého hraješ („Hraju za…“) – overlay ho ukazuje, dokud hra běží – a hodnocení itemů.
-/// Po stisku B (obchod) ve hře se chvíli čte obrazovka a k názvům itemů se přidají štítky; čte se jen tehdy,
-/// ať to během hraní nebere výkon.
+/// Deadlock (Valve): pozná se podle procesu deadlock.exe (starší verze hry project8.exe; hledá se jednou za 5 s).
+/// Rozhraní (deadlock.js) pošle build hrdiny, za kterého hraješ („Hraju za…“; bez něj itemy všech hrdinů) –
+/// overlay ho ukazuje, dokud hra běží – a hodnocení itemů. Po stisku B (obchod) ve hře se chvíli čte obrazovka
+/// a k názvům itemů se přidají štítky; čte se jen tehdy, ať to během hraní nebere výkon.
 /// </summary>
 public sealed partial class MainForm
 {
-    const string DeadlockProcess = "project8";
+    static readonly string[] DeadlockProcesses = ["deadlock", "project8"];
     const int VK_B = 0x42, VK_ESCAPE = 0x1B;
 
     int deadlockPid;
@@ -22,7 +22,8 @@ public sealed partial class MainForm
     readonly ShopScanner shopScanner = new();
     readonly System.Windows.Forms.Timer shopTimer = new() { Interval = 700 };
     readonly List<AugmentLabelForm> shopLabels = [];
-    Dictionary<int, JsonNode> shopRatings = new();
+    // Id itemů jsou 32bitová čísla bez znaménka (3077079169…) – do int se nevejdou
+    Dictionary<long, JsonNode> shopRatings = new();
     string shopNoData = "";
     bool shopBusy;
     int shopMisses;
@@ -53,6 +54,13 @@ public sealed partial class MainForm
         }
     }
 
+    static int FindDeadlockPid()
+    {
+        foreach (var name in DeadlockProcesses)
+            if (FindProcess(name) is int pid and not 0) return pid;
+        return 0;
+    }
+
     bool DeadlockInForeground()
     {
         if (deadlockPid == 0) return false;
@@ -67,7 +75,7 @@ public sealed partial class MainForm
         if (now - deadlockCheckedAt < 5000) return;
         deadlockCheckedAt = now;
         bool was = DeadlockRunning;
-        deadlockPid = FindProcess(DeadlockProcess);
+        deadlockPid = FindDeadlockPid();
         if (was != DeadlockRunning)
         {
             PostToWeb(new { type = "deadlock", running = DeadlockRunning });
@@ -89,22 +97,22 @@ public sealed partial class MainForm
         }
     }
 
-    // Build a hodnocení itemů od rozhraní – null = nehraješ za žádného hrdinu
+    // Build a hodnocení itemů od rozhraní (hrdina z „Hraju za…“, jinak všichni hrdinové)
     void SetDeadlockData(JsonNode msg)
     {
         dlBuild = msg["build"]?.DeepClone();
         shopRatings = new();
-        var list = new List<(int, string)>();
+        var list = new List<(long, string)>();
         if (msg["shop"] is JsonObject shop)
         {
             foreach (var entry in shop["names"]?.AsArray() ?? new JsonArray())
             {
-                if (entry is not JsonArray arr || arr.Count < 2 || arr[0] is not JsonValue idv || !idv.TryGetValue<int>(out var id)) continue;
+                if (entry is not JsonArray arr || arr.Count < 2 || arr[0] is not JsonValue idv || !idv.TryGetValue<long>(out var id)) continue;
                 foreach (var n in arr.Skip(1))
                     if (n is JsonValue v && v.TryGetValue<string>(out var s)) list.Add((id, s));
             }
             foreach (var (k, v) in shop["ratings"]?.AsObject() ?? new JsonObject())
-                if (int.TryParse(k, out var id) && v != null) shopRatings[id] = v.DeepClone();
+                if (long.TryParse(k, out var id) && v != null) shopRatings[id] = v.DeepClone();
             shopNoData = Str(shop["noData"]);
         }
         shopScanner.SetNames(list);
@@ -198,9 +206,9 @@ public sealed partial class MainForm
 
     void ShowShopLabels(List<ShopScanner.Found> found)
     {
-        double ScoreOf(int id) => shopRatings.TryGetValue(id, out var v) && v["score"] is JsonValue sv && sv.TryGetValue<double>(out var d) ? d : 0;
+        double ScoreOf(long id) => shopRatings.TryGetValue(id, out var v) && v["score"] is JsonValue sv && sv.TryGetValue<double>(out var d) ? d : 0;
         // Zlatý rámeček: nejlepší item z toho, co je vidět
-        int best = found.Where(f => ScoreOf(f.Id) > 0).OrderByDescending(f => ScoreOf(f.Id)).Select(f => f.Id).FirstOrDefault(-1);
+        long best = found.Where(f => ScoreOf(f.Id) > 0).OrderByDescending(f => ScoreOf(f.Id)).Select(f => f.Id).FirstOrDefault(-1);
         int i = 0;
         foreach (var f in found.Take(48))
         {

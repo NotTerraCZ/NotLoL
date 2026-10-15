@@ -55,4 +55,4 @@ If a release run fails halfway, delete the unfinished release (and its tag) on G
 - Riot Data Dragon and CommunityDragon – names, icons and in-game texts
 - LoL client (LCU API) and the Live Client Data API – champ select, live game, profile and player ranks
 - [deadlock-api.com](https://deadlock-api.com) – Deadlock heroes, items, hero and item stats, player builds (`api.deadlock-api.com`, images on `assets-bucket.deadlock-api.com`)
-- Deadlock itself has no local API: NotLoL finds it by its process (`project8.exe`) and reads the shop from the screen
+- Deadlock itself has no local API: NotLoL finds it by its process (`deadlock.exe`, `project8.exe` in older builds) and reads the shop from the screen
