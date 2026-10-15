@@ -18,6 +18,11 @@ sealed class GameKeyHook : IDisposable
     /// <summary>Stisknutá zkratka (id z Hotkeys).</summary>
     public event Action<int>? Pressed;
 
+    /// <summary>Klávesy bez Ctrl/Alt, o jejichž stisku chceme vědět (Deadlock: B = obchod, Esc).</summary>
+    public HashSet<int> WatchKeys { get; } = [];
+    /// <summary>Stisknutá sledovaná klávesa (virtuální kód).</summary>
+    public event Action<int>? KeyPressed;
+
     public GameKeyHook() => proc = Callback;
 
     public bool Installed => hook != IntPtr.Zero;
@@ -50,15 +55,20 @@ sealed class GameKeyHook : IDisposable
             {
                 down.Remove(vk);
             }
-            else if ((msg == WM_KEYDOWN || msg == WM_SYSKEYDOWN) && down.Add(vk) && Hotkeys.All.Any(b => b.Vk == vk))
+            else if ((msg == WM_KEYDOWN || msg == WM_SYSKEYDOWN) && down.Add(vk))
             {
-                bool ctrl = IsDown(VK_CONTROL, 0xA2, 0xA3);
-                bool shift = IsDown(VK_SHIFT, 0xA0, 0xA1);
-                bool alt = IsDown(VK_MENU, 0xA4, 0xA5);
-                // Modifikátory musí sedět přesně (Ctrl+X není Ctrl+Shift+X)
-                var hit = Hotkeys.All.FirstOrDefault(b => b.Vk == vk && b.Ctrl == ctrl && b.Shift == shift && b.Alt == alt);
-                // Rychle vrátit – samotná akce proběhne až po návratu z hooku
-                if (hit != null && (Filter?.Invoke() ?? true)) Pressed?.Invoke(hit.Id);
+                bool watched = WatchKeys.Contains(vk);
+                if (watched || Hotkeys.All.Any(b => b.Vk == vk))
+                {
+                    bool ctrl = IsDown(VK_CONTROL, 0xA2, 0xA3);
+                    bool shift = IsDown(VK_SHIFT, 0xA0, 0xA1);
+                    bool alt = IsDown(VK_MENU, 0xA4, 0xA5);
+                    // Modifikátory musí sedět přesně (Ctrl+X není Ctrl+Shift+X)
+                    var hit = Hotkeys.All.FirstOrDefault(b => b.Vk == vk && b.Ctrl == ctrl && b.Shift == shift && b.Alt == alt);
+                    // Rychle vrátit – samotná akce proběhne až po návratu z hooku
+                    if (hit != null && (Filter?.Invoke() ?? true)) Pressed?.Invoke(hit.Id);
+                    else if (watched && !ctrl && !alt && (Filter?.Invoke() ?? true)) KeyPressed?.Invoke(vk);
+                }
             }
         }
         return CallNextHookEx(hook, code, wParam, lParam);

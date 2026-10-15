@@ -12,13 +12,16 @@
  *   {type:'update', state, current, version, progress, checkedAt, error} – aktualizace (viz AppUpdater.cs)
  *   {type:'navigate', hash}               – např. "Nastavení" z ikony v oznamovací oblasti
  *   {type:'backup'}                       – hodinová záloha dat (viz runBackup)
+ *   {type:'deadlock', running}            – běží Deadlock (project8.exe) – rozhraní se na něj přepne
  * Odsud jdou zpět: ready, settings (overlay, jazyk, texty pro tray a overlay), import, overlayBuild,
- * checkUpdate, applyUpdate (restart do stažené verze) a warm (adresy pro zálohu – stáhne je appka).
+ * checkUpdate, applyUpdate (restart do stažené verze), warm (adresy pro zálohu – stáhne je appka)
+ * a deadlockBuild (build a hodnocení itemů hrdiny, za kterého hraješ v Deadlocku – viz deadlock.js).
  * V obyčejném prohlížeči se nic z toho nezobrazí.
  */
 const Desktop = (() => {
   const host = window.chrome?.webview;
   const client = { connected: false, phase: 'None' };
+  let deadlockRunning = false;
   let appStatus = null;
   let update = null;
   const pending = new Map();
@@ -79,6 +82,8 @@ const Desktop = (() => {
     if (!m || typeof m !== 'object') return;
     switch (m.type) {
       case 'client':
+        // Zapnutý LoL klient = přepnout na LoL (jen při zapnutí, ať jde ručně přepnout zpátky)
+        if (m.connected && !client.connected && !deadlockRunning) setGame('lol');
         client.connected = !!m.connected;
         client.phase = m.phase || 'None';
         if (client.phase !== 'ChampSelect') {
@@ -121,6 +126,15 @@ const Desktop = (() => {
         break;
       case 'backup':
         runBackup().catch(() => send({ type: 'backupDone', ok: 0, fail: 1 }));
+        break;
+      case 'deadlock':
+        // Spuštěný Deadlock: přepnout na něj a poslat build hrdiny, za kterého hraješ
+        if (m.running && !deadlockRunning) {
+          setGame('deadlock');
+          Deadlock.pushInGame();
+        }
+        deadlockRunning = !!m.running;
+        changed();
         break;
     }
   }
@@ -236,6 +250,10 @@ const Desktop = (() => {
       if (queue().arena) for (const c of champs) add(null, () => [API.urls.arenaChampion(c.key)]);
       // Ikony schopností (Data Dragon)
       for (const c of champs) add(null, () => [API.urls.championKit(st, c)]);
+      // Deadlock: hrdinové, itemy a statistiky (hlavně pro hrdinu, za kterého hraješ)
+      if (state.game === 'deadlock' || state.dlHero) {
+        for (const url of await Deadlock.backupUrls()) add(null, () => [url]);
+      }
 
       // Každá úloha nejdřív s patchem, ve kterém data byla minule (jinak s aktuálním)
       for (const j of jobs) {
@@ -859,5 +877,6 @@ const Desktop = (() => {
     get appStatus() { return appStatus; },
     get update() { return update; },
     get demo() { return demo; },
+    get deadlockRunning() { return deadlockRunning; },
   };
 })();
