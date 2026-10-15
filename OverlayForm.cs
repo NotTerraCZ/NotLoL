@@ -54,6 +54,10 @@ sealed class OverlayForm : Form
         ["kPrismatic"] = Color.FromArgb(197, 139, 255),
         ["kGold"] = Color.FromArgb(242, 193, 78),
         ["kSilver"] = Color.FromArgb(183, 189, 207),
+        // Deadlock: typ itemu (zbraň, vitalita, duch)
+        ["weapon"] = Color.FromArgb(232, 145, 60),
+        ["vitality"] = Color.FromArgb(124, 194, 68),
+        ["spirit"] = Color.FromArgb(176, 125, 219),
     };
 
     sealed class Build
@@ -62,6 +66,8 @@ sealed class OverlayForm : Form
         public string[] Order = [];
         public Dictionary<string, string> SkillIcons = new();
         public List<Pic> Start = [], Core = [], Next = [], Spells = [], Augments = [], Prism = [];
+        // Seznamy s názvy (Deadlock: early / mid / late itemy) – [{label, items}]
+        public List<(string Label, List<Pic> Items)> Lists = [];
         public Pic? Keystone;
 
         public Build(JsonNode n)
@@ -78,13 +84,15 @@ sealed class OverlayForm : Form
             Spells = Pics(n["spells"]);
             Augments = Pics(n["augments"]);
             Prism = Pics(n["prism"]);
+            foreach (var l in n["lists"]?.AsArray().OfType<JsonNode>() ?? [])
+                Lists.Add((Str(l["label"]), Pics(l["items"])));
             var k = n["keystone"];
             if (k != null) Keystone = new Pic(0, Str(k["name"]), Str(k["icon"]));
         }
 
         public IEnumerable<string> Urls() =>
             new[] { Icon, Keystone?.Url ?? "" }.Concat(SkillIcons.Values)
-                .Concat(Start.Concat(Core).Concat(Next).Concat(Spells).Concat(Augments).Concat(Prism).Select(p => p.Url))
+                .Concat(Start.Concat(Core).Concat(Next).Concat(Spells).Concat(Augments).Concat(Prism).Concat(Lists.SelectMany(l => l.Items)).Select(p => p.Url))
                 .Where(u => u.Length > 0).Distinct();
 
         static string Str(JsonNode? n) => n is JsonValue v && v.TryGetValue<string>(out var s) ? s : "";
@@ -384,6 +392,26 @@ sealed class OverlayForm : Form
                     g.DrawPath(pen, path);
                 }
                 DrawText(g, (owned ? "✓ " : "") + it.Name, fText, owned ? Good : Fg, pad + 32, y + 4);
+                y += 28;
+            }
+            y += 6;
+        }
+
+        // Seznamy itemů s názvy (Deadlock) – rámeček v barvě typu itemu
+        foreach (var (label, items) in b.Lists)
+        {
+            DrawText(g, label, fSmall, Muted, pad, y);
+            y += 17;
+            foreach (var it in items)
+            {
+                DrawImage(g, it.Url, pad, y, 24, 4);
+                if (g != null)
+                {
+                    using var pen = new Pen(RarityColors.GetValueOrDefault(it.Rarity, Line), 2f);
+                    using var path = Rounded(new RectangleF(pad, y, 24, 24), 4);
+                    g.DrawPath(pen, path);
+                }
+                DrawText(g, it.Name, fText, Fg, pad + 32, y + 4);
                 y += 28;
             }
             y += 6;

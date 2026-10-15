@@ -60,6 +60,15 @@ NotLoL opens your champion's build as soon as you pick it. In ARAM it shows whet
 
 ![In-game panel (Ctrl+X), shown with preview data](docs/images/ingame-panel.png)
 
+### 💀 Deadlock
+
+NotLoL covers Deadlock too. Switch games with the icons at the top of the sidebar – or just start Deadlock and NotLoL switches by itself.
+
+- A **hero tier list** with win rate, pick rate and KDA from the last 7 days of public matches, filtered by rank.
+- A **build for every hero**: the **best early items** (what players buy in the first minutes and win with), mid- and late-game items, and the most popular player builds from the game.
+- An **item tier list** by slot (Weapon, Vitality, Spirit) and tier.
+- Click **I play …** on a hero page: during the match an **overlay** shows the early, mid and late items, and when you open the **shop (B)**, NotLoL reads the item names on the screen and labels each one with how good it is for your hero.
+
 ### 🔎 Player profiles
 
 Look up any player by Riot ID: their rank, the roles and game modes they play, who they play with most, their champion mastery and stats like damage per minute or kill participation. Click any match in their history to see every player's damage, gold, CS, vision and items, or compare up to 5 players side by side. Your own profile sits in the top right corner.
@@ -114,13 +123,13 @@ NotLoL doesn't touch the game's files or memory. It talks to the LoL client and 
 <details>
 <summary><b>Where does the data come from?</b></summary>
 <br>
-Tier lists, builds, runes and matchups come from <a href="https://u.gg">u.gg</a>, Arena data from <a href="https://op.gg">OP.GG</a>, and names and icons from Riot's Data Dragon and CommunityDragon. NotLoL always shows the newest patch, and you can switch to older ones in the top bar.
+Tier lists, builds, runes and matchups come from <a href="https://u.gg">u.gg</a>, Arena data from <a href="https://op.gg">OP.GG</a>, and names and icons from Riot's Data Dragon and CommunityDragon. Deadlock heroes, items, stats and player builds come from <a href="https://deadlock-api.com">deadlock-api.com</a>. NotLoL always shows the newest patch, and you can switch to older ones in the top bar.
 </details>
 
 <details>
 <summary><b>The overlay doesn't show up in the game.</b></summary>
 <br>
-Switch the game to <b>Borderless</b> window mode – Windows doesn't draw other apps over a game in exclusive fullscreen. Also check that the overlay is turned on in NotLoL's settings, and press <kbd>Ctrl</kbd> + <kbd>Shift</kbd> + <kbd>H</kbd> (or the shortcut you set instead) in case you hid it.
+Switch the game to <b>Borderless</b> window mode – Windows doesn't draw other apps over a game in exclusive fullscreen. The same goes for Deadlock (<i>Settings → Video → Window Mode</i>). Also check that the overlay is turned on in NotLoL's settings, and press <kbd>Ctrl</kbd> + <kbd>Shift</kbd> + <kbd>H</kbd> (or the shortcut you set instead) in case you hid it.
 </details>
 
 <details>
@@ -143,6 +152,6 @@ Open Windows <i>Settings → Apps</i>, find NotLoL and click <b>Uninstall</b>. T
 
 ---
 
-<sub>NotLoL isn't endorsed by Riot Games and doesn't reflect the views or opinions of Riot Games or anyone officially involved in producing or managing Riot Games properties. Riot Games, and all associated properties are trademarks or registered trademarks of Riot Games, Inc. NotLoL is not affiliated with u.gg or OP.GG.</sub>
+<sub>NotLoL isn't endorsed by Riot Games or Valve. Deadlock is a trademark of Valve Corporation. NotLoL isn't endorsed by Riot Games and doesn't reflect the views or opinions of Riot Games or anyone officially involved in producing or managing Riot Games properties. Riot Games, and all associated properties are trademarks or registered trademarks of Riot Games, Inc. NotLoL is not affiliated with u.gg or OP.GG.</sub>
 
 <sub>Want to build NotLoL yourself or release a new version? See [DEVELOPMENT.md](DEVELOPMENT.md).</sub>

@@ -11,7 +11,7 @@ namespace NotLoL;
 /// Hlavní okno: WebView2 zobrazuje rozhraní zabalené v .exe (složka web/)
 /// pod virtuální adresou https://notlol.example/. Data se stahují z u.gg a Data Dragonu.
 /// </summary>
-public sealed class MainForm : Form
+public sealed partial class MainForm : Form
 {
     static readonly Color Background = Color.FromArgb(13, 11, 18);
     internal static readonly string DataDir = Path.Combine(
@@ -118,8 +118,9 @@ public sealed class MainForm : Form
         keepOnTop.Tick += (_, _) => BringOverlaysToTop();
         augTimer.Tick += (_, _) => AugTick();
         winEventProc = (_, _, _, _, _, _, _) => BringOverlaysToTop();
-        keyHook.Filter = GameInForeground;
+        keyHook.Filter = () => GameInForeground() || DeadlockInForeground();
         keyHook.Pressed += id => BeginInvoke(() => HotkeyAction(id));
+        InitDeadlock();
         Hotkeys.Changed += OnHotkeysChanged;
 
         // Spouštění se systémem: při prvním spuštění zapnout, jinak jen opravit cestu k .exe
@@ -419,13 +420,7 @@ public sealed class MainForm : Form
         return fgIsGame;
     }
 
-    static int FindGamePid()
-    {
-        var procs = Process.GetProcessesByName("League of Legends");
-        int pid = procs.FirstOrDefault()?.Id ?? 0;
-        foreach (var p in procs) p.Dispose();
-        return pid;
-    }
+    static int FindGamePid() => FindProcess("League of Legends");
 
     // Stejná zkratka může přijít dvakrát (RegisterHotKey i hook) – druhou do 0,4 s ignorujeme
     void HotkeyAction(int id)
@@ -436,7 +431,7 @@ public sealed class MainForm : Form
 
         switch (id)
         {
-            case Hotkeys.Panel:
+            case Hotkeys.Panel when gameKey != null || panelDemo: // herní panel je jen pro LoL
                 TogglePanel();
                 break;
             case Hotkeys.Overlay:
@@ -472,7 +467,7 @@ public sealed class MainForm : Form
         var ours = new List<(IntPtr handle, Rectangle bounds)>();
         if (overlay?.Visible == true) ours.Add((overlay.Handle, overlay.Bounds));
         if (panel?.Visible == true) ours.Add((panel.Handle, panel.Bounds));
-        foreach (var l in augLabels) if (l.Visible) ours.Add((l.Handle, l.Bounds));
+        foreach (var l in augLabels.Concat(shopLabels)) if (l.Visible) ours.Add((l.Handle, l.Bounds));
         if (ours.Count == 0) return;
 
         // Projdi okna shora dolů: dokud nenarazíme na všechna naše, nesmí nás překrývat nic cizího
@@ -490,7 +485,7 @@ public sealed class MainForm : Form
             {
                 overlay?.KeepOnTop();
                 panel?.KeepOnTop();
-                foreach (var l in augLabels) l.KeepOnTop();
+                foreach (var l in augLabels.Concat(shopLabels)) l.KeepOnTop();
                 return;
             }
         }
@@ -732,7 +727,7 @@ public sealed class MainForm : Form
     void UpdateWebMemory()
     {
         var core = web.CoreWebView2;
-        bool idle = core != null && webReady && !Visible && !connected && gameKey == null
+        bool idle = core != null && webReady && !Visible && !connected && gameKey == null && !DeadlockRunning
             && !backupRunning && !overlayDemo && !panelDemo;
         if (!idle)
         {
@@ -771,6 +766,7 @@ public sealed class MainForm : Form
                 PostMe();
                 if (champSelect != null) PostChampSelect();
                 if (game != null) PostGame(game);
+                if (DeadlockRunning) PostToWeb(new { type = "deadlock", running = true });
                 PauseHotkeys(false);
                 backupRunning = false;
                 if (!backupTimer.Enabled)
@@ -813,6 +809,9 @@ public sealed class MainForm : Form
                 PostToWeb(new { type = "result", id, ok = true, message = "", data = status });
                 break;
             }
+            case "deadlockBuild":
+                SetDeadlockData(msg);
+                break;
             case "settings":
                 overlayEnabled = msg["overlay"]?.GetValue<bool>() ?? true;
                 cardLabelsEnabled = msg["cards"]?.GetValue<bool>() ?? true;
@@ -940,6 +939,7 @@ public sealed class MainForm : Form
                     overlay.SetBuild(null);
                     SetAugmentData(null);
                     if (game != null) PostGame(game); // vrátit skutečný build
+                    ApplyDeadlockOverlay();
                 }
                 UpdateOverlay();
                 UpdateHotkeys();
@@ -1112,6 +1112,8 @@ public sealed class MainForm : Form
         {
             try { await TickAsync(); }
             catch { /* klient se zrovna zavírá/otevírá – zkusíme příště */ }
+            try { CheckDeadlock(); }
+            catch { /* příště */ }
             UpdateWebMemory();
             // Bez LoL klienta stačí kontrola jednou za 5 s (hledání klienta prochází všechny procesy)
             await Task.Delay(phase is "ChampSelect" or "InProgress" || gameKey != null ? 1000 : connected ? 2500 : 5000);
@@ -1243,14 +1245,15 @@ public sealed class MainForm : Form
     void UpdateOverlay()
     {
         if (overlay == null) return;
-        bool show = overlay.HasBuild && (overlayDemo || (overlayEnabled && !overlayHidden && gameKey != null));
+        bool inGame = gameKey != null || (overlayIsDeadlock && DeadlockRunning);
+        bool show = overlay.HasBuild && (overlayDemo || (overlayEnabled && !overlayHidden && inGame));
         if (show && !overlay.Visible) overlay.Show();
         else if (!show && overlay.Visible) overlay.Hide();
     }
 
     // Zkratky platí jen během hry (nebo ukázky), jinak zůstanou Windows a ostatním appkám:
     // herní panel, skrýt/zobrazit overlay a přesouvání overlaye (výchozí Ctrl+X, Ctrl+Shift+H, Ctrl+Shift+M – viz Hotkeys)
-    void UpdateHotkeys() => SetHotkeys(gameKey != null || overlayDemo || panelDemo);
+    void UpdateHotkeys() => SetHotkeys(gameKey != null || overlayDemo || panelDemo || DeadlockRunning);
 
     void SetHotkeys(bool on)
     {
@@ -1277,6 +1280,8 @@ public sealed class MainForm : Form
     {
         foreach (var b in Hotkeys.All)
         {
+            // Herní panel jen v LoL – v Deadlocku by Ctrl+X zbytečně bral ostatním programům
+            if (b.Id == Hotkeys.Panel && gameKey == null && !panelDemo) continue;
             uint mods = MOD_NOREPEAT | (b.Ctrl ? MOD_CONTROL : 0) | (b.Shift ? MOD_SHIFT : 0) | (b.Alt ? MOD_ALT : 0);
             RegisterHotKey(Handle, b.Id, mods, (uint)b.Vk); // obsazenou zkratku (jiná appka) zachytí ve hře aspoň hook
         }
@@ -1353,8 +1358,9 @@ public sealed class MainForm : Form
         SetHotkeys(false);
         keyHook.Dispose();
         augTimer.Stop();
+        shopTimer.Stop();
         updateTimer.Stop();
-        foreach (var l in augLabels) l.Close();
+        foreach (var l in augLabels.Concat(shopLabels)) l.Close();
         overlay?.Close();
         panel?.Close();
         lcu.Dispose();

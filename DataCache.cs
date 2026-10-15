@@ -26,6 +26,7 @@ sealed class DataCache
         "https://ddragon.leagueoflegends.com/cdn/*/data/*",
         "https://raw.communitydragon.org/*.json",
         "https://lol-api-champion.op.gg/*", // Arena (prizmatické itemy, augmenty) – u.gg ji nemá aktuální
+        "https://api.deadlock-api.com/*",   // Deadlock (hrdinové, itemy, statistiky, buildy)
     ];
 
     readonly HttpClient http = new(new HttpClientHandler { AutomaticDecompression = DecompressionMethods.All })
@@ -70,13 +71,14 @@ sealed class DataCache
     // Jen data (JSON) z těchhle serverů – obrázky necháváme prohlížeči
     static bool IsData(string url) =>
         url.StartsWith("https://lol-api-champion.op.gg/", StringComparison.OrdinalIgnoreCase)
+        || url.StartsWith("https://api.deadlock-api.com/", StringComparison.OrdinalIgnoreCase)
         || (url.EndsWith(".json", StringComparison.OrdinalIgnoreCase) && !url.StartsWith(WebAssets.Origin, StringComparison.OrdinalIgnoreCase));
 
     // Servery, jejichž data appka zálohuje (stejné jako Filters) – rozhraní nemůže nechat stáhnout cokoli jiného
     static readonly string[] Hosts =
     [
         "https://stats2.u.gg/", "https://static.bigbrain.gg/", "https://ddragon.leagueoflegends.com/",
-        "https://raw.communitydragon.org/", "https://lol-api-champion.op.gg/",
+        "https://raw.communitydragon.org/", "https://lol-api-champion.op.gg/", "https://api.deadlock-api.com/",
     ];
     static bool IsBackedUp(string url) =>
         IsData(url) && Hosts.Any(h => url.StartsWith(h, StringComparison.OrdinalIgnoreCase));

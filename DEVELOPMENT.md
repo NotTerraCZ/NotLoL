@@ -5,7 +5,8 @@ How NotLoL is built, updated and released. The player-facing description is in t
 ## Project layout
 
 - `web/` – the whole UI (HTML, CSS, JavaScript), embedded in the `.exe` and served to WebView2 from `https://notlol.example/`
-- `*.cs` – the desktop part (WinForms + WebView2): main window and tray (`MainForm.cs`), LoL client and live game (`LeagueClient.cs`), overlay (`OverlayForm.cs`), in-game panel (`InGameForm.cs` + `web/ingame.html`), on-screen augment ratings (`AugmentScanner.cs`, `AugmentLabelForm.cs`), data backup (`DataCache.cs`), updates (`AppUpdater.cs`)
+- `*.cs` – the desktop part (WinForms + WebView2): main window and tray (`MainForm.cs`), LoL client and live game (`LeagueClient.cs`), overlay (`OverlayForm.cs`), in-game panel (`InGameForm.cs` + `web/ingame.html`), on-screen augment ratings (`AugmentScanner.cs`, `AugmentLabelForm.cs`), Deadlock detection, overlay and shop ratings (`MainForm.Deadlock.cs`, `ShopScanner.cs`), data backup (`DataCache.cs`), updates (`AppUpdater.cs`)
+- `web/js/deadlock.js` – Deadlock pages (hero tier list, hero builds, items) and the build/item ratings sent to the desktop part
 - `.github/workflows/release.yml` – builds and publishes a release
 - `docs/images/` – pictures for the README
 
@@ -53,3 +54,5 @@ If a release run fails halfway, delete the unfinished release (and its tag) on G
 - [OP.GG](https://op.gg) – Arena (placements, augments, prismatic items)
 - Riot Data Dragon and CommunityDragon – names, icons and in-game texts
 - LoL client (LCU API) and the Live Client Data API – champ select, live game, profile and player ranks
+- [deadlock-api.com](https://deadlock-api.com) – Deadlock heroes, items, hero and item stats, player builds (`api.deadlock-api.com`, images on `assets-bucket.deadlock-api.com`)
+- Deadlock itself has no local API: NotLoL finds it by its process (`project8.exe`) and reads the shop from the screen
