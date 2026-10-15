@@ -8,7 +8,7 @@
  *   /v1/analytics/item-stats            – výhry, zápasy a průměrný čas nákupu itemů (pro hrdinu)
  *   /v1/builds                          – buildy hráčů ze hry, nejoblíbenější nahoře
  * Stránky #/dl (hrdinové), #/dl/hero/<jméno> a #/dl/items. Hrdina, za kterého hraješ („Hraju za…“),
- * jde do desktopové appky: overlay s pořadím nákupu a čísla kroků u itemů v obchodě (čtení obrazovky).
+ * jde do desktopové appky: overlay s pořadím nákupu a tierem každého itemu.
  * Používá pomocné funkce z app.js (esc, pct, view, state…) – volá se až po jeho načtení.
  */
 const Deadlock = (() => {
@@ -147,14 +147,6 @@ const Deadlock = (() => {
     return assetsPromise;
   }
 
-  // Anglické názvy itemů – hra může běžet anglicky, i když appka ne (čtení obchodu)
-  function getEnglishItemNames() {
-    if (lang() === 'english') return getAssets().then(a => new Map(a.items.map(i => [i.id, i.name])));
-    return getJSON(assetUrl('items', 'english'))
-      .then(j => new Map(list(j).filter(isShopItem).map(i => [i.id, cleanName(i.name)])))
-      .catch(() => new Map());
-  }
-
   // Hrdinové: výhry, zápasy, KDA → tier (stejné skóre jako u šampionů v LoL)
   async function getHeroRows(rank) {
     const [a, json] = await Promise.all([
@@ -267,11 +259,14 @@ const Deadlock = (() => {
   /**
    * Pořadí nákupu: z každé fáze nejlepší itemy z těch, které hráči hrdiny opravdu kupují (aspoň 40 % toho
    * nejkupovanějšího ve fázi – žádné výstřelky s pár hrami), seřazené podle toho, kdy se v průměru kupují.
-   * Stejné pořadí ukazuje stránka hrdiny, overlay a čísla u itemů v obchodě.
+   * Každý item dostane i tier (rating): pořadí podle skóre mezi všemi itemy hrdiny, stejné hranice jako tier
+   * listy. Stejné pořadí a tiery ukazuje stránka hrdiny i overlay ve hře.
    */
   const ORDER_COUNTS = { early: 5, mid: 4, late: 4 };
   const PHASE_AT = { early: 300, mid: 1000, late: 1800 }; // náhradní čas nákupu, když ho API nedá
   function buyOrder(phases) {
+    const scored = [...phases.early, ...phases.mid, ...phases.late].sort((a, b) => b.score - a.score);
+    scored.forEach((r, i) => (r.rating = API.tierByPosition(i, scored.length)));
     const order = [];
     for (const [phase, count] of Object.entries(ORDER_COUNTS)) {
       const arr = phases[phase];
@@ -284,24 +279,22 @@ const Deadlock = (() => {
     return order.sort((a, b) => at(a) - at(b));
   }
 
-  // ---------- Hrdina, za kterého hraješ (overlay a obchod ve hře) ----------
+  // ---------- Hrdina, za kterého hraješ (overlay ve hře) ----------
 
-  const nameList = (items, english) => items.map(i => [i.id, i.name, english.get(i.id) || i.name]);
-
-  // Bez vybraného hrdiny (nebo když ho API nezná) itemy všech hrdinů – overlay i čísla v obchodě fungují i tak
+  // Bez vybraného hrdiny (nebo když ho API nezná) itemy všech hrdinů – overlay funguje i tak
   async function inGamePayload(heroId) {
     const rank = rankByKey(state.dlRank);
     const { rows: heroRows, assets } = await getHeroRows(rank);
     const hero = heroId ? assets.heroById.get(heroId) : null;
     const heroRow = hero ? heroRows.find(r => r.hero.id === hero.id) : null;
     const base = hero ? heroRow?.matches : heroRows.reduce((s, r) => s + r.matches, 0);
-    const [rows, english] = await Promise.all([
-      getItemRows(hero ? hero.id : null, rank, base).catch(() => []),
-      getEnglishItemNames(),
-    ]);
+    const rows = await getItemRows(hero ? hero.id : null, rank, base).catch(() => []);
     const order = buyOrder(buildPhases(rows, heroRow?.wr || 0.5));
-    // Krok, ikona, typ itemu (barva rámečku) a cena
-    const pic = (r, i) => ({ id: r.item.id, name: r.item.name, icon: r.item.png, rarity: r.item.slot, step: i + 1, note: r.item.cost ? nfInt.format(r.item.cost) : '' });
+    // Krok, ikona, typ itemu (barva rámečku), cena a tier
+    const pic = (r, i) => ({
+      id: r.item.id, name: r.item.name, icon: r.item.png, rarity: r.item.slot, step: i + 1,
+      note: r.item.cost ? nfInt.format(r.item.cost) : '', tier: r.rating?.key || '', cls: r.rating?.cls || '',
+    });
     return {
       build: {
         champion: hero ? { name: hero.name, icon: hero.png } : { name: t('dl.ov.anyHero'), icon: '' },
@@ -312,8 +305,6 @@ const Deadlock = (() => {
           items: order.map(pic).filter((p, i) => order[i].phase === phase),
         })).filter(l => l.items.length),
       },
-      // Obchod: názvy všech itemů (podle nich se pozná, že je otevřený), čísla jen u těch z pořadí nákupu
-      shop: { names: nameList(assets.items, english), order: order.map((r, i) => [r.item.id, i + 1, r.phase]) },
     };
   }
 
@@ -322,7 +313,7 @@ const Deadlock = (() => {
   async function pushInGame() {
     if (!window.chrome?.webview) return;
     const id = ++pushReq;
-    const payload = await inGamePayload(state.dlHero).catch(() => ({ build: null, shop: null }));
+    const payload = await inGamePayload(state.dlHero).catch(() => ({ build: null }));
     if (id === pushReq) window.chrome.webview.postMessage({ type: 'deadlockBuild', ...payload });
   }
 
@@ -515,7 +506,7 @@ const Deadlock = (() => {
       </div>`).join('')}</div>`;
   }
 
-  // Pořadí nákupu po fázích; čísla jdou napříč fázemi (stejná jako v overlayi a v obchodě)
+  // Pořadí nákupu po fázích; čísla jdou napříč fázemi (stejná jako v overlayi), u každého itemu tier
   function orderHtml(order) {
     if (!order.length) return `<p class="muted">${t('dl.fewData')}</p>`;
     const head = { early: 'dl.earlyGame', mid: 'dl.mid', late: 'dl.late' };
@@ -530,6 +521,7 @@ const Deadlock = (() => {
             <b>${esc(r.item.name)}</b>
             <small>${souls(r.item.cost)}${r.buy ? ` · ${t('dl.boughtAt', { m: Math.round(r.buy / 60) })}` : ''}</small>
           </span>
+          ${tierBadge(r.rating)}
           <span class="dl-item-stat"><b class="${wrClass(r.wr)}">${pct(r.wr)}</b><small>${t('dl.buys', { p: pct(r.pick) })}</small></span>
         </div>`).join('')}</div></div>`;
     }).join('')}</div>`;
@@ -749,7 +741,6 @@ const Deadlock = (() => {
       assetUrl('items'),
       `${BASE}/v1/analytics/hero-stats?min_unix_timestamp=${since()}${rankQ(rank.badge)}`,
     ];
-    if (lang() !== 'english') urls.push(assetUrl('items', 'english')); // čtení obchodu v anglické hře
     if (state.dlHero) {
       urls.push(`${BASE}/v1/analytics/item-stats?hero_id=${state.dlHero}&min_unix_timestamp=${since()}${rankQ(rank.badge)}`);
     }

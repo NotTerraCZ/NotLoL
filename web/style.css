@@ -1551,6 +1551,7 @@ p.more-games { color: var(--muted); }
 .dl-order-col { display: grid; gap: 8px; align-content: start; }
 .dl-order-col h3 { margin: 0; color: var(--phase); font: 700 12px/1.2 var(--display); text-transform: uppercase; letter-spacing: .08em; }
 .dl-order .dl-items { grid-template-columns: minmax(0, 1fr); }
+.dl-order .dl-item { grid-template-columns: auto auto minmax(0, 1fr) auto auto; }
 .dl-step {
   display: grid; place-items: center; width: 26px; height: 26px;
   color: #0d0b12; background: var(--phase); font: 700 14px/1 var(--display); font-variant-numeric: tabular-nums;

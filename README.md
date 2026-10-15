@@ -65,9 +65,9 @@ NotLoL opens your champion's build as soon as you pick it. In ARAM it shows whet
 NotLoL covers Deadlock too. Switch games with the icons at the top of the sidebar – or just start Deadlock and NotLoL switches by itself.
 
 - A **hero tier list** with win rate, pick rate and KDA from the last 7 days of public matches, filtered by rank.
-- A **build for every hero**: a numbered **buy order** (what to buy step by step, early → mid → late), the **best early items** (what players buy in the first minutes and win with), mid- and late-game items, and the most popular player builds from the game (updated in recent months).
+- A **build for every hero**: a numbered **buy order** with each item's tier (what to buy step by step, early → mid → late), the **best early items** (what players buy in the first minutes and win with), mid- and late-game items, and the most popular player builds from the game (updated in recent months).
 - An **item tier list** by slot (Weapon, Vitality, Spirit) and tier.
-- Click **I play …** on a hero page: during the match an **overlay** shows the buy order, and when you open the **shop (B)**, NotLoL reads the item names on the screen and puts the step number (1, 2, 3 …) on the items to buy, colored by phase.
+- Click **I play …** on a hero page: during the match an **overlay** shows the numbered buy order with each item's tier and cost.
 
 ### 🔎 Player profiles
 

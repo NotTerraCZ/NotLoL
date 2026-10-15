@@ -47,8 +47,8 @@ sealed class OverlayForm : Form
         ["R"] = Color.FromArgb(255, 78, 90),
     };
 
-    // Step a Note: pořadí nákupu a cena (Deadlock)
-    sealed record Pic(int Id, string Name, string Url, string Rarity = "", int Step = 0, string Note = "");
+    // Step, Note a Tier: pořadí nákupu, cena a tier itemu pro hrdinu (Deadlock; TierCls = barva jako v rozhraní)
+    sealed record Pic(int Id, string Name, string Url, string Rarity = "", int Step = 0, string Note = "", string Tier = "", string TierCls = "");
 
     static readonly Dictionary<string, Color> RarityColors = new()
     {
@@ -107,7 +107,7 @@ sealed class OverlayForm : Form
         static string Str(JsonNode? n) => n is JsonValue v && v.TryGetValue<string>(out var s) ? s : "";
         static List<Pic> Pics(JsonNode? n) => n?.AsArray().OfType<JsonNode>()
             .Select(p => new Pic(p["id"] is JsonValue v && v.TryGetValue<int>(out var id) ? id : 0, Str(p["name"]), Str(p["icon"]), Str(p["rarity"]),
-                p["step"] is JsonValue sv && sv.TryGetValue<int>(out var step) ? step : 0, Str(p["note"])))
+                p["step"] is JsonValue sv && sv.TryGetValue<int>(out var step) ? step : 0, Str(p["note"]), Str(p["tier"]), Str(p["cls"])))
             .ToList() ?? [];
     }
 
@@ -428,9 +428,28 @@ sealed class OverlayForm : Form
                     using var path = Rounded(new RectangleF(ix, y, 24, 24), 4);
                     g.DrawPath(pen, path);
                 }
+                // Vpravo cena a před ní tier
+                float right = w - pad;
                 float noteW = it.Note.Length > 0 && g != null ? g.MeasureString(it.Note, fText).Width : 0;
-                if (noteW > 0) DrawTextIn(g, it.Note, fText, Souls, new RectangleF(w - pad - noteW, y, noteW, 24), StringAlignment.Far);
-                DrawTextIn(g, it.Name, fText, Fg, new RectangleF(ix + 32, y, w - pad - noteW - 6 - (ix + 32), 24), StringAlignment.Near);
+                if (noteW > 0)
+                {
+                    DrawTextIn(g, it.Note, fText, Souls, new RectangleF(right - noteW, y, noteW, 24), StringAlignment.Far);
+                    right -= noteW + 6;
+                }
+                if (it.Tier.Length > 0)
+                {
+                    var tc = AugmentLabelForm.TierColors.GetValueOrDefault(it.TierCls, Muted);
+                    var badge = new RectangleF(right - 24, y + 4, 24, 16);
+                    if (g != null)
+                    {
+                        using var brush = new SolidBrush(tc);
+                        using var path = Rounded(badge, 3);
+                        g.FillPath(brush, path);
+                    }
+                    DrawTextIn(g, it.Tier, fSmall, Ink, badge, StringAlignment.Center);
+                    right -= 24 + 6;
+                }
+                DrawTextIn(g, it.Name, fText, Fg, new RectangleF(ix + 32, y, right - (ix + 32), 24), StringAlignment.Near);
                 y += 28;
             }
             y += 6;
