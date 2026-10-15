@@ -15,7 +15,7 @@
  *   {type:'deadlock', running}            – běží Deadlock (deadlock.exe) – rozhraní se na něj přepne
  * Odsud jdou zpět: ready, settings (overlay, jazyk, texty pro tray a overlay), import, overlayBuild,
  * checkUpdate, applyUpdate (restart do stažené verze), warm (adresy pro zálohu – stáhne je appka)
- * a deadlockBuild (build a hodnocení itemů hrdiny, za kterého hraješ v Deadlocku – viz deadlock.js).
+ * a deadlockBuild (pořadí nákupu pro hrdinu, za kterého hraješ v Deadlocku – viz deadlock.js).
  * V obyčejném prohlížeči se nic z toho nezobrazí.
  */
 const Desktop = (() => {

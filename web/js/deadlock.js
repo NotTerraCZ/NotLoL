@@ -8,7 +8,7 @@
  *   /v1/analytics/item-stats            – výhry, zápasy a průměrný čas nákupu itemů (pro hrdinu)
  *   /v1/builds                          – buildy hráčů ze hry, nejoblíbenější nahoře
  * Stránky #/dl (hrdinové), #/dl/hero/<jméno> a #/dl/items. Hrdina, za kterého hraješ („Hraju za…“),
- * jde do desktopové appky: overlay s buildem a hodnocení itemů v obchodě (čtení obrazovky).
+ * jde do desktopové appky: overlay s pořadím nákupu a čísla kroků u itemů v obchodě (čtení obrazovky).
  * Používá pomocné funkce z app.js (esc, pct, view, state…) – volá se až po jeho načtení.
  */
 const Deadlock = (() => {
@@ -264,29 +264,31 @@ const Deadlock = (() => {
     return out;
   }
 
-  // Hodnocení každého itemu pro hrdinu (štítky v obchodě): tier podle pořadí, verdikt podle fáze
-  function itemRatings(rows, phases) {
-    const scored = [...phases.early, ...phases.mid, ...phases.late].sort((a, b) => b.score - a.score);
-    const out = {};
-    scored.forEach((r, i) => {
-      const tier = API.tierByPosition(i, scored.length);
-      const top = phases[r.phase].indexOf(r) < (r.phase === 'early' ? 6 : 5);
-      out[r.item.id] = {
-        score: r.score + 10, // kladné – „nejlepší z nabídky“ se hledá podle největšího
-        tier: tier.key,
-        cls: tier.cls,
-        verdict: top ? t(`dl.verdict.${r.phase}`) : t('dl.verdict.ok'),
-        stat: t('dl.itemStat', { wr: pct(r.wr), pick: pct(r.pick) }),
-      };
-    });
-    return out;
+  /**
+   * Pořadí nákupu: z každé fáze nejlepší itemy z těch, které hráči hrdiny opravdu kupují (aspoň 40 % toho
+   * nejkupovanějšího ve fázi – žádné výstřelky s pár hrami), seřazené podle toho, kdy se v průměru kupují.
+   * Stejné pořadí ukazuje stránka hrdiny, overlay a čísla u itemů v obchodě.
+   */
+  const ORDER_COUNTS = { early: 5, mid: 4, late: 4 };
+  const PHASE_AT = { early: 300, mid: 1000, late: 1800 }; // náhradní čas nákupu, když ho API nedá
+  function buyOrder(phases) {
+    const order = [];
+    for (const [phase, count] of Object.entries(ORDER_COUNTS)) {
+      const arr = phases[phase];
+      const minPick = Math.max(0.1, 0.4 * Math.max(0, ...arr.map(r => r.pick)));
+      const popular = arr.filter(r => r.pick >= minPick);
+      // Málo dat: doplnit dalšími podle skóre
+      order.push(...[...popular, ...arr.filter(r => !popular.includes(r))].slice(0, count));
+    }
+    const at = r => r.buy || PHASE_AT[r.phase] + r.item.tier;
+    return order.sort((a, b) => at(a) - at(b));
   }
 
   // ---------- Hrdina, za kterého hraješ (overlay a obchod ve hře) ----------
 
   const nameList = (items, english) => items.map(i => [i.id, i.name, english.get(i.id) || i.name]);
 
-  // Bez vybraného hrdiny (nebo když ho API nezná) itemy všech hrdinů – overlay i štítky v obchodě fungují i tak
+  // Bez vybraného hrdiny (nebo když ho API nezná) itemy všech hrdinů – overlay i čísla v obchodě fungují i tak
   async function inGamePayload(heroId) {
     const rank = rankByKey(state.dlRank);
     const { rows: heroRows, assets } = await getHeroRows(rank);
@@ -297,23 +299,25 @@ const Deadlock = (() => {
       getItemRows(hero ? hero.id : null, rank, base).catch(() => []),
       getEnglishItemNames(),
     ]);
-    const phases = buildPhases(rows, heroRow?.wr || 0.5);
-    const pic = r => ({ id: r.item.id, name: r.item.name, icon: r.item.png, rarity: r.item.slot });
+    const order = buyOrder(buildPhases(rows, heroRow?.wr || 0.5));
+    // Krok, ikona, typ itemu (barva rámečku) a cena
+    const pic = (r, i) => ({ id: r.item.id, name: r.item.name, icon: r.item.png, rarity: r.item.slot, step: i + 1, note: r.item.cost ? nfInt.format(r.item.cost) : '' });
     return {
       build: {
         champion: hero ? { name: hero.name, icon: hero.png } : { name: t('dl.ov.anyHero'), icon: '' },
-        subtitle: hero ? `Deadlock · ${rankLabel(rank)}` : t('dl.ov.pickHero'),
-        lists: [
-          { label: t('dl.ov.early'), items: phases.early.slice(0, 5).map(pic) },
-          { label: t('dl.ov.mid'), items: phases.mid.slice(0, 4).map(pic) },
-          { label: t('dl.ov.late'), items: phases.late.slice(0, 4).map(pic) },
-        ].filter(l => l.items.length),
+        subtitle: hero ? `${t('dl.order')} · ${rankLabel(rank)}` : t('dl.ov.pickHero'),
+        lists: Object.keys(ORDER_COUNTS).map(phase => ({
+          label: t(`dl.ov.${phase}`),
+          phase,
+          items: order.map(pic).filter((p, i) => order[i].phase === phase),
+        })).filter(l => l.items.length),
       },
-      shop: { names: nameList(assets.items, english), ratings: itemRatings(rows, phases), noData: t('dl.fewData') },
+      // Obchod: názvy všech itemů (podle nich se pozná, že je otevřený), čísla jen u těch z pořadí nákupu
+      shop: { names: nameList(assets.items, english), order: order.map((r, i) => [r.item.id, i + 1, r.phase]) },
     };
   }
 
-  // Pošle desktopové appce build a hodnocení itemů hrdiny, za kterého hraješ
+  // Pošle desktopové appce pořadí nákupu pro hrdinu, za kterého hraješ
   let pushReq = 0;
   async function pushInGame() {
     if (!window.chrome?.webview) return;
@@ -511,6 +515,26 @@ const Deadlock = (() => {
       </div>`).join('')}</div>`;
   }
 
+  // Pořadí nákupu po fázích; čísla jdou napříč fázemi (stejná jako v overlayi a v obchodě)
+  function orderHtml(order) {
+    if (!order.length) return `<p class="muted">${t('dl.fewData')}</p>`;
+    const head = { early: 'dl.earlyGame', mid: 'dl.mid', late: 'dl.late' };
+    return `<div class="dl-order">${Object.keys(ORDER_COUNTS).map(phase => {
+      const steps = order.map((r, i) => [r, i + 1]).filter(([r]) => r.phase === phase);
+      if (!steps.length) return '';
+      return `<div class="dl-order-col phase-${phase}"><h3>${t(head[phase])}</h3><div class="dl-items">${steps.map(([r, n]) => `
+        <div class="dl-item slot-${r.item.slot}" title="${esc(r.item.name)} · ${esc(slotLabel(r.item.slot))}">
+          <span class="dl-step">${n}</span>
+          ${itemImg(r.item)}
+          <span class="dl-item-text">
+            <b>${esc(r.item.name)}</b>
+            <small>${souls(r.item.cost)}${r.buy ? ` · ${t('dl.boughtAt', { m: Math.round(r.buy / 60) })}` : ''}</small>
+          </span>
+          <span class="dl-item-stat"><b class="${wrClass(r.wr)}">${pct(r.wr)}</b><small>${t('dl.buys', { p: pct(r.pick) })}</small></span>
+        </div>`).join('')}</div></div>`;
+    }).join('')}</div>`;
+  }
+
   function buildsHtml(builds, a) {
     if (!builds.length) return `<p class="muted">${t('dl.noBuilds')}</p>`;
     return `<div class="dl-builds">${builds.map(b => `
@@ -544,6 +568,7 @@ const Deadlock = (() => {
       ]);
       if (id !== heroReq) return;
       const phases = buildPhases(items, row?.wr || 0.5);
+      const order = buyOrder(phases);
 
       const stat = (value, label, cls = '') => `<div class="stat"><b class="${cls}">${value}</b><span>${label}</span></div>`;
       const ranked = heroRows.filter(r => r.eligible).sort((x, y) => y.z - x.z);
@@ -577,6 +602,11 @@ const Deadlock = (() => {
           <p class="sub">${esc([rankLabel(rank), t('dl.lastDays', { n: DAYS }), totalGames ? games(totalGames) : null].filter(Boolean).join(' · '))}</p>
         </div>
         <div class="champ-grid">
+          <article class="card card-wide dl-order-card">
+            <h2>${t('dl.order')}</h2>
+            <p class="hint">${t('dl.orderHint')}</p>
+            ${orderHtml(order)}
+          </article>
           <article class="card card-wide dl-early">
             <h2>${t('dl.early')}</h2>
             <p class="hint">${t('dl.earlyHint')}</p>
