@@ -5,7 +5,7 @@ How NotLoL is built, updated and released. The player-facing description is in t
 ## Project layout
 
 - `web/` – the whole UI (HTML, CSS, JavaScript), embedded in the `.exe` and served to WebView2 from `https://notlol.example/`
-- `*.cs` – the desktop part (WinForms + WebView2): main window and tray (`MainForm.cs`), LoL client and live game (`LeagueClient.cs`), overlay (`OverlayForm.cs`), in-game panel (`InGameForm.cs` + `web/ingame.html`), on-screen augment ratings (`AugmentScanner.cs`, `AugmentLabelForm.cs`), Deadlock detection, overlay and buy-order numbers in the shop (`MainForm.Deadlock.cs`, `ShopScanner.cs`, `ShopStepForm.cs`), data backup (`DataCache.cs`), updates (`AppUpdater.cs`)
+- `*.cs` – the desktop part (WinForms + WebView2): main window and tray (`MainForm.cs`), LoL client and live game (`LeagueClient.cs`), overlay (`OverlayForm.cs`), in-game panel (`InGameForm.cs` + `web/ingame.html`), on-screen augment ratings (`AugmentScanner.cs`, `AugmentLabelForm.cs`), Deadlock detection, overlay and buy-order numbers in the shop (`MainForm.Deadlock.cs`, `ShopScanner.cs`, `ShopLabelLayout.cs`, `ShopStepForm.cs`), data backup (`DataCache.cs`), updates (`AppUpdater.cs`)
 - `web/js/deadlock.js` – Deadlock pages (hero tier list, hero builds, items) and the build/item ratings sent to the desktop part
 - `.github/workflows/release.yml` – builds and publishes a release
 - `docs/images/` – pictures for the README

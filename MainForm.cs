@@ -467,7 +467,7 @@ public sealed partial class MainForm : Form
         var ours = new List<(IntPtr handle, Rectangle bounds)>();
         if (overlay?.Visible == true) ours.Add((overlay.Handle, overlay.Bounds));
         if (panel?.Visible == true) ours.Add((panel.Handle, panel.Bounds));
-        foreach (var l in augLabels.Cast<Form>().Concat(shopLabels)) if (l.Visible) ours.Add((l.Handle, l.Bounds));
+        foreach (var l in augLabels.Cast<Form>().Concat(shopLabels.Values)) if (l.Visible) ours.Add((l.Handle, l.Bounds));
         if (ours.Count == 0) return;
 
         // Projdi okna shora dolů: dokud nenarazíme na všechna naše, nesmí nás překrývat nic cizího
@@ -486,7 +486,7 @@ public sealed partial class MainForm : Form
                 overlay?.KeepOnTop();
                 panel?.KeepOnTop();
                 foreach (var l in augLabels) l.KeepOnTop();
-                foreach (var l in shopLabels) l.KeepOnTop();
+                foreach (var l in shopLabels.Values) l.KeepOnTop();
                 return;
             }
         }
@@ -1361,7 +1361,7 @@ public sealed partial class MainForm : Form
         augTimer.Stop();
         shopTimer.Stop();
         updateTimer.Stop();
-        foreach (var l in augLabels.Cast<Form>().Concat(shopLabels)) l.Close();
+        foreach (var l in augLabels.Cast<Form>().Concat(shopLabels.Values)) l.Close();
         overlay?.Close();
         panel?.Close();
         lcu.Dispose();
